@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sala Víbora — Granada</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --negro: #0a0a0a;
+    --verde: #b8ff57;
+    --blanco: #f0ede6;
+    --gris: #1a1a1a;
+    --gris2: #2a2a2a;
+    --texto: #c8c4bb;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--negro);
+    color: var(--blanco);
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* NAV */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 40px;
+    background: linear-gradient(to bottom, rgba(10,10,10,0.98), transparent);
+  }
+
+  .nav-logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 3px;
+    color: var(--verde);
+    text-decoration: none;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 30px;
+    list-style: none;
+  }
+
+  .nav-links a {
+    color: var(--texto);
+    text-decoration: none;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--verde); }
+
+  /* HERO */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 60px 40px;
+    position: relative;
+    overflow: hidden;
+    background: var(--negro);
+  }
+
+  .hero-bg {
+    position: absolute;
+    inset: 0;
+    background: 
+      radial-gradient(ellipse 80% 60% at 60% 40%, rgba(184,255,87,0.06) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 40% at 20% 80%, rgba(184,255,87,0.04) 0%, transparent 60%);
+  }
+
+  .hero-grid {
+    position: absolute;
+    inset: 0;
+    background-image: 
+      linear-gradient(rgba(184,255,87,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(184,255,87,0.04) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  .hero-tag {
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--verde);
+    margin-bottom: 20px;
+    position: relative;
+  }
+
+  .hero h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(80px, 18vw, 220px);
+    line-height: 0.85;
+    letter-spacing: -2px;
+    color: var(--blanco);
+    position: relative;
+    mix-blend-mode: normal;
+  }
+
+  .hero h1 span { color: var(--verde); }
+
+  .hero-sub {
+    margin-top: 30px;
+    color: var(--texto);
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    position: relative;
+  }
+
+  .hero-cta {
+    margin-top: 40px;
+    position: relative;
+    display: inline-block;
+  }
+
+  .btn-principal {
+    display: inline-block;
+    background: var(--verde);
+    color: var(--negro);
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 16px 36px;
+    text-decoration: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+
+  .btn-principal:hover {
+    transform: translate(-3px, -3px);
+    box-shadow: 6px 6px 0 rgba(184,255,87,0.3);
+  }
+
+  .btn-secundario {
+    display: inline-block;
+    border: 1px solid rgba(184,255,87,0.3);
+    color: var(--verde);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 14px 30px;
+    text-decoration: none;
+    transition: border-color 0.2s, background 0.2s;
+    margin-left: 16px;
+  }
+
+  .btn-secundario:hover {
+    border-color: var(--verde);
+    background: rgba(184,255,87,0.05);
+  }
+
+  /* TICKER */
+  .ticker {
+    background: var(--verde);
+    color: var(--negro);
+    padding: 12px 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .ticker-inner {
+    display: inline-block;
+    animation: ticker 25s linear infinite;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 3px;
+  }
+
+  @keyframes ticker {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  /* SECCIÓN */
+  section { padding: 80px 40px; }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: var(--verde);
+    margin-bottom: 8px;
+  }
+
+  .section-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(40px, 8vw, 90px);
+    line-height: 0.9;
+    margin-bottom: 50px;
+    color: var(--blanco);
+  }
+
+  /* EVENTOS */
+  #eventos { background: var(--gris); }
+
+  .eventos-grid {
+    display: grid;
+    gap: 2px;
+  }
+
+  .evento {
+    display: grid;
+    grid-template-columns: 100px 1fr auto;
+    align-items: center;
+    gap: 30px;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--gris2);
+    transition: background 0.2s;
+    cursor: default;
+  }
+
+  .evento:hover { background: rgba(184,255,87,0.03); }
+
+  .evento-fecha {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    line-height: 1;
+    color: var(--verde);
+  }
+
+  .evento-dia {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--texto);
+    margin-top: 4px;
+  }
+
+  .evento-nombre {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 1px;
+    color: var(--blanco);
+    margin-bottom: 4px;
+  }
+
+  .evento-detalle {
+    font-size: 11px;
+    color: var(--texto);
+    letter-spacing: 1px;
+  }
+
+  .evento-hora {
+    font-size: 11px;
+    color: var(--texto);
+    text-align: right;
+  }
+
+  .tag-gratis {
+    display: inline-block;
+    background: var(--verde);
+    color: var(--negro);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 3px 8px;
+    margin-left: 10px;
+    vertical-align: middle;
+  }
+
+  .btn-entrada {
+    display: inline-block;
+    border: 1px solid var(--verde);
+    color: var(--verde);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    text-decoration: none;
+    transition: background 0.2s, color 0.2s;
+    white-space: nowrap;
+  }
+
+  .btn-entrada:hover {
+    background: var(--verde);
+    color: var(--negro);
+  }
+
+  /* INFO */
+  #info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: start;
+  }
+
+  .info-bloque h3 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    color: var(--verde);
+    margin-bottom: 16px;
+  }
+
+  .info-bloque p {
+    color: var(--texto);
+    line-height: 1.8;
+    font-size: 12px;
+  }
+
+  .info-dato {
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--texto);
+    letter-spacing: 1px;
+  }
+
+  .info-dato strong {
+    color: var(--blanco);
+    display: block;
+    font-size: 13px;
+    margin-bottom: 2px;
+  }
+
+  /* ALQUILER */
+  #alquiler { background: var(--gris); }
+
+  .alquiler-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+  }
+
+  .alquiler-inner p {
+    color: var(--texto);
+    font-size: 12px;
+    line-height: 1.9;
+    margin-bottom: 20px;
+  }
+
+  .alquiler-specs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  .spec {
+    border-left: 2px solid var(--verde);
+    padding-left: 16px;
+  }
+
+  .spec-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 42px;
+    line-height: 1;
+    color: var(--verde);
+  }
+
+  .spec-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--texto);
+    margin-top: 4px;
+  }
+
+  /* FOOTER */
+  footer {
+    background: #050505;
+    padding: 60px 40px 30px;
+    border-top: 1px solid var(--gris2);
+  }
+
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 40px;
+    margin-bottom: 50px;
+  }
+
+  .footer-logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 48px;
+    color: var(--verde);
+    line-height: 1;
+    margin-bottom: 12px;
+  }
+
+  .footer-desc {
+    font-size: 11px;
+    color: var(--texto);
+    line-height: 1.8;
+    max-width: 260px;
+  }
+
+  .footer-col h4 {
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--verde);
+    margin-bottom: 16px;
+  }
+
+  .footer-col a, .footer-col p {
+    display: block;
+    font-size: 11px;
+    color: var(--texto);
+    text-decoration: none;
+    margin-bottom: 8px;
+    transition: color 0.2s;
+  }
+
+  .footer-col a:hover { color: var(--blanco); }
+
+  .footer-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 24px;
+    border-top: 1px solid var(--gris2);
+    font-size: 10px;
+    color: #555;
+    letter-spacing: 1px;
+  }
+
+  /* ANIMACIONES */
+  .fade-in {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+
+  .fade-in.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* MOBILE */
+  @media (max-width: 768px) {
+    nav { padding: 16px 20px; }
+    .nav-links { display: none; }
+    .hero { padding: 40px 20px; }
+    section { padding: 60px 20px; }
+    #info { grid-template-columns: 1fr; gap: 40px; }
+    .alquiler-inner { grid-template-columns: 1fr; }
+    .footer-grid { grid-template-columns: 1fr 1fr; gap: 30px; }
+    .evento { grid-template-columns: 70px 1fr; }
+    .evento-hora { display: none; }
+    .btn-secundario { display: none; }
+    footer { padding: 40px 20px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">VÍBORA</a>
+  <ul class="nav-links">
+    <li><a href="#eventos">Esta semana</a></li>
+    <li><a href="#alquiler">Tu evento</a></li>
+    <li><a href="#info">Sala</a></li>
+    <li><a href="https://www.entradasya.es" target="_blank">EntradasYa</a></li>
+    <li><a href="mailto:direccion@salavibora.com">Contacto</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-grid"></div>
+  <div class="hero-tag">Granada · Música underground desde siempre</div>
+  <h1>SALA<br><span>VÍ</span>BORA</h1>
+  <p class="hero-sub">C/ Santa Bárbara 3 · Granada · Electrónica, DnB, Hip Hop, Afrobeat, Reggae</p>
+  <div class="hero-cta">
+    <a href="#eventos" class="btn-principal">Ver programación</a>
+    <a href="https://tally.so/r/68OZYA" target="_blank" class="btn-secundario">Alquila la sala</a>
+  </div>
+</div>
+
+<!-- TICKER -->
+<div class="ticker">
+  <span class="ticker-inner">
+    ELECTRÓNICA · DRUM & BASS · JUNGLE · HIP HOP · AFROBEAT · REGGAE · BREAKBEAT · TECHNO · ELECTRÓNICA · DRUM & BASS · JUNGLE · HIP HOP · AFROBEAT · REGGAE · BREAKBEAT · TECHNO · ELECTRÓNICA · DRUM & BASS · JUNGLE · HIP HOP · AFROBEAT · REGGAE · BREAKBEAT · TECHNO ·&nbsp;
+  </span>
+</div>
+
+<!-- EVENTOS -->
+<section id="eventos">
+  <p class="section-label">Agenda</p>
+  <h2 class="section-title">ESTA<br>SEMANA</h2>
+
+  <div class="eventos-grid fade-in">
+
+    <div class="evento">
+      <div>
+        <div class="evento-fecha">JUE<br>16</div>
+        <div class="evento-dia">Abril</div>
+      </div>
+      <div>
+        <div class="evento-nombre">NOISEX MUSIC LIVE + AFTER PARTY <span class="tag-gratis">gratis</span></div>
+        <div class="evento-detalle">Showcase + Club · NEVERAGAIN · ELISSIR · WHITETRASHKIWI · ASHURAMARIA · KRNDENAS</div>
+      </div>
+      <div class="evento-hora">Show 00:00<br>Club hasta 6:00</div>
+    </div>
+
+    <div class="evento">
+      <div>
+        <div class="evento-fecha">VIE<br>17</div>
+        <div class="evento-dia">Abril</div>
+      </div>
+      <div>
+        <div class="evento-nombre">ARGENTINOS ATR</div>
+        <div class="evento-detalle">Club · 00:00 – 7:00</div>
+      </div>
+      <div class="evento-hora">
+        <a href="https://www.argentinosatr.com/eventos/En-Granada-17-04-26-p697250540" target="_blank" class="btn-entrada">Entradas</a>
+      </div>
+    </div>
+
+    <div class="evento">
+      <div>
+        <div class="evento-fecha">SÁB<br>18</div>
+        <div class="evento-dia">Abril</div>
+      </div>
+      <div>
+        <div class="evento-nombre">SOMBRA DOBLE</div>
+        <div class="evento-detalle">Concierto · 22:00 – 1:00 · Tributo al indie español</div>
+      </div>
+      <div class="evento-hora">
+        <a href="https://entradium.com/events/tributo-al-indie-espanol-by-sombra-doble-granada-gira-yo-nunca-2026" target="_blank" class="btn-entrada">Entradas</a>
+      </div>
+    </div>
+
+    <div class="evento">
+      <div>
+        <div class="evento-fecha">SÁB<br>18</div>
+        <div class="evento-dia">Abril</div>
+      </div>
+      <div>
+        <div class="evento-nombre">AFROBEAT PARTY</div>
+        <div class="evento-detalle">Club · 1:00 – 7:00 · DJ SAMI + DJ JAMES</div>
+      </div>
+      <div class="evento-hora">
+        <a href="https://www.entradasya.es/es/entradas-afro-beat-party-4dvw#/tcgjkfUzFFh" target="_blank" class="btn-entrada">Ofertas</a>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin-top: 40px; text-align: center;">
+    <a href="https://new.express.adobe.com/webpage/ckhEKfsJVSXCr" target="_blank" class="btn-secundario">Ver programación completa →</a>
+  </div>
+</section>
+
+<!-- INFO SALA -->
+<section>
+  <div id="info">
+    <div class="info-bloque fade-in">
+      <p class="section-label">La sala</p>
+      <h2 class="section-title">UNDERGROUND<br>DE<br>VERDAD</h2>
+      <p>Sala Víbora es el espacio de referencia de la música electrónica y alternativa en Granada. Sin filtros de cara a la galería, sin compromisos de imagen comercial. Lo underground como valor, no como estética.</p>
+    </div>
+    <div class="fade-in" style="padding-top: 20px;">
+      <div class="info-dato" style="margin-bottom: 24px;">
+        <strong>Dirección</strong>
+        <a href="https://www.google.com/maps/place/Sala+Víbora" target="_blank" style="color: var(--texto); text-decoration: none;">C/ Santa Bárbara 3, Granada</a>
+      </div>
+      <div class="info-dato" style="margin-bottom: 24px;">
+        <strong>Contacto</strong>
+        <a href="mailto:direccion@salavibora.com" style="color: var(--texto); text-decoration: none;">direccion@salavibora.com</a>
+      </div>
+      <div class="info-dato" style="margin-bottom: 24px;">
+        <strong>Ticketing</strong>
+        <a href="https://www.entradasya.es" target="_blank" style="color: var(--texto); text-decoration: none;">www.entradasya.es</a>
+      </div>
+      <div class="info-dato" style="margin-bottom: 24px;">
+        <strong>Redes sociales</strong>
+        <a href="https://www.instagram.com/salavibora/" target="_blank" style="color: var(--texto); text-decoration: none;">@salavibora</a>
+        <a href="https://www.instagram.com/vibora_room" target="_blank" style="color: var(--texto); text-decoration: none;">@vibora_room</a>
+        <a href="https://www.tiktok.com/@salavibora" target="_blank" style="color: var(--texto); text-decoration: none;">TikTok @salavibora</a>
+      </div>
+      <div class="info-dato">
+        <strong>Kit de prensa</strong>
+        <a href="https://drive.google.com/drive/folders/13Fvx_5n5_M7g5if6rq6vscCIDZBYAFvy" target="_blank" style="color: var(--texto); text-decoration: none;">Descargar logo y assets</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ALQUILER -->
+<section id="alquiler">
+  <p class="section-label">¿Tienes un proyecto?</p>
+  <h2 class="section-title fade-in">HAZ TU<br>EVENTO<br>AQUÍ</h2>
+  <div class="alquiler-inner">
+    <div class="fade-in">
+      <p>Sala Víbora está disponible para conciertos, fiestas, showcases, presentaciones y cualquier evento que se tome en serio la música. Espacio completo, sonido profesional, equipo incluido.</p>
+      <p>Rellena el formulario y te contactamos en menos de 24h con disponibilidad y condiciones.</p>
+      <a href="https://tally.so/r/68OZYA" target="_blank" class="btn-principal">Solicitar fecha</a>
+    </div>
+    <div class="alquiler-specs fade-in">
+      <div class="spec">
+        <div class="spec-num">329</div>
+        <div class="spec-label">Aforo</div>
+      </div>
+      <div class="spec">
+        <div class="spec-num">300€</div>
+        <div class="spec-label">Alquiler + IVA</div>
+      </div>
+      <div class="spec">
+        <div class="spec-num">24h</div>
+        <div class="spec-label">Respuesta</div>
+      </div>
+      <div class="spec">
+        <div class="spec-num">0€</div>
+        <div class="spec-label">Comisión ticketing</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-grid">
+    <div>
+      <div class="footer-logo">VÍBORA</div>
+      <p class="footer-desc">Música underground en Granada. Electrónica, DnB, Jungle, Hip Hop, Afrobeat, Reggae. C/ Santa Bárbara 3.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Sala</h4>
+      <a href="#eventos">Esta semana</a>
+      <a href="https://new.express.adobe.com/webpage/ckhEKfsJVSXCr" target="_blank">Programación</a>
+      <a href="#info">Info y contacto</a>
+      <a href="https://drive.google.com/drive/folders/13Fvx_5n5_M7g5if6rq6vscCIDZBYAFvy" target="_blank">Kit de prensa</a>
+    </div>
+    <div class="footer-col">
+      <h4>Eventos</h4>
+      <a href="https://tally.so/r/68OZYA" target="_blank">Alquila la sala</a>
+      <a href="https://www.entradasya.es" target="_blank">EntradasYa.es</a>
+      <a href="https://new.express.adobe.com/webpage/5X7qW1AeNfu0L" target="_blank">Víbora Room</a>
+    </div>
+    <div class="footer-col">
+      <h4>Redes</h4>
+      <a href="https://www.instagram.com/salavibora/" target="_blank">Instagram @salavibora</a>
+      <a href="https://www.instagram.com/vibora_room" target="_blank">Instagram @vibora_room</a>
+      <a href="https://www.instagram.com/entradasya.es/" target="_blank">Instagram @entradasya</a>
+      <a href="https://www.tiktok.com/@salavibora" target="_blank">TikTok @salavibora</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Sala Víbora · NEOVOGUETRIUNFO SLU · Granada</span>
+    <span>direccion@salavibora.com</span>
+  </div>
+</footer>
+
+<script>
+  // Fade in on scroll
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>
