@@ -160,7 +160,7 @@
         function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
         // Calcular comisiones automáticamente
-        function calcularEvento(ventas, pcComercial, pcRetornoPromotor, pcRetornoSala, pcRetornoGrupo) {
+        function calcularEvento(ventas, pcComercial, pcRetornoPromotor, pcRetornoSala, pcRetornoGrupo, pcJefe) {
             const ventasBrutas = parseFloat(ventas) || 0;
             const comVivetix = state.config.comisionVivetix;
             const comEntradasYa = state.config.comisionEntradasYa;
@@ -172,8 +172,9 @@
             const importeRetornoPromotor = (importeEntradasYaBase * (parseFloat(pcRetornoPromotor) || 0)) / 100;
             const importeRetornoSala = (importeEntradasYaBase * (parseFloat(pcRetornoSala) || 0)) / 100;
             const importeRetornoGrupo = (importeEntradasYaBase * (parseFloat(pcRetornoGrupo) || 0)) / 100;
+            const importeJefe = (importeEntradasYaBase * (parseFloat(pcJefe) || 0)) / 100;
             
-            const netoEntradasYa = importeEntradasYaBase - importeComercial - importeRetornoPromotor - importeRetornoSala - importeRetornoGrupo;
+            const netoEntradasYa = importeEntradasYaBase - importeComercial - importeRetornoPromotor - importeRetornoSala - importeRetornoGrupo - importeJefe;
             
             return {
                 importeVivetix,
@@ -182,8 +183,16 @@
                 importeRetornoPromotor,
                 importeRetornoSala,
                 importeRetornoGrupo,
+                importeJefe,
                 netoEntradasYa
             };
+        }
+
+        // Dado el nombre de un comercial, devuelve su Jefe Comercial (o null si no tiene)
+        function obtenerJefeDeComercial(nombreComercial) {
+            const com = state.comerciales.find(c => (c.nombre||'').trim().toLowerCase() === (nombreComercial||'').trim().toLowerCase());
+            if (!com || !com.jefeId) return null;
+            return state.comerciales.find(c => c.id === com.jefeId) || null;
         }
 
         // Guardar evento
@@ -193,7 +202,8 @@
                 datos.comisionComercial,
                 datos.retornoPromotor,
                 datos.retornoSala,
-                datos.retornoGrupo
+                datos.retornoGrupo,
+                datos.comisionJefe
             );
             
             const evento = {
@@ -275,7 +285,10 @@
                 'Ventas Brutas': e.ventasBrutas,
                 'Vivetix': e.importeVivetix,
                 'EntradasYa Base': e.importeEntradasYaBase,
+                'Nombre Comercial': e.nombreComercial || '',
                 'Comercial': e.importeComercial,
+                'Nombre Jefe': e.nombreJefe || '',
+                'Jefe Comercial': e.importeJefe || 0,
                 'Ret. Promotor': e.importeRetornoPromotor,
                 'Ret. Sala': e.importeRetornoSala,
                 'Ret. Grupo': e.importeRetornoGrupo,
@@ -305,11 +318,19 @@
             const dataComerciales = state.comerciales.map(com => {
                 const eventos = state.eventos.filter(e => (e.nombreComercial||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
                 const totalComision = eventos.reduce((s, e) => s + e.importeComercial, 0);
+                const esJefe = com.tipo === 'jefe';
+                const eventosEquipo = esJefe ? state.eventos.filter(e => (e.nombreJefe||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase()) : [];
+                const totalEquipo = eventosEquipo.reduce((s, e) => s + (e.importeJefe||0), 0);
                 return {
                     'Nombre': com.nombre,
+                    'Rango': esJefe ? 'Jefe Comercial' : 'Comercial',
+                    'Jefe Asignado': esJefe ? '' : (state.comerciales.find(j => j.id === com.jefeId)?.nombre || ''),
                     '% Comisión': com.comisionDefecto,
-                    'Eventos': eventos.length,
-                    'Total Comisiones': totalComision
+                    'Eventos Personales': eventos.length,
+                    'Comisión Personal': totalComision,
+                    'Eventos de Equipo': eventosEquipo.length,
+                    'Comisión de Equipo (1%)': totalEquipo,
+                    'Total': totalComision + totalEquipo
                 };
             });
             
@@ -546,7 +567,8 @@ Ventas Brutas: ${e.ventasBrutas.toFixed(2)}€
 Vivetix (${state.config.comisionVivetix}%): ${e.importeVivetix.toFixed(2)}€
 EntradasYa Base (${state.config.comisionEntradasYa}%): ${e.importeEntradasYaBase.toFixed(2)}€
 
-Comercial (${e.comisionComercial}%): ${e.importeComercial.toFixed(2)}€
+Comercial${e.nombreComercial ? ' (' + e.nombreComercial + ')' : ''} (${e.comisionComercial}%): ${e.importeComercial.toFixed(2)}€
+Jefe Comercial${e.nombreJefe ? ' (' + e.nombreJefe + ')' : ''} (${e.comisionJefe||0}%): ${(e.importeJefe||0).toFixed(2)}€
 Retorno Promotor (${e.retornoPromotor}%): ${e.importeRetornoPromotor.toFixed(2)}€
 Retorno Sala (${e.retornoSala}%): ${e.importeRetornoSala.toFixed(2)}€
 Retorno Grupo (${e.retornoGrupo}%): ${e.importeRetornoGrupo.toFixed(2)}€
@@ -628,12 +650,26 @@ Estado: ${e.estado}`);
                             </div>
                         </div>
 
-                        <div>
-                            <label class="block text-sm font-semibold mb-1">Comercial</label>
-                            <select name="nombreComercial" class="w-full border border-gray-300 rounded px-3 py-2">
-                                <option value="">Sin comercial asignado</option>
-                                ${state.comerciales.map(com => `<option value="${esc(com.nombre)}" ${evento?.nombreComercial === com.nombre ? 'selected' : ''}>${esc(com.nombre)}</option>`).join('')}
-                            </select>
+                        <div class="grid md:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-semibold mb-1">Comercial</label>
+                                <select name="nombreComercial" onchange="actualizarJefeAuto(); actualizarCalculos();" class="w-full border border-gray-300 rounded px-3 py-2">
+                                    <option value="">Sin comercial asignado</option>
+                                    ${state.comerciales.filter(c => c.tipo !== 'jefe').map(com => `<option value="${esc(com.nombre)}" ${evento?.nombreComercial === com.nombre ? 'selected' : ''}>${esc(com.nombre)}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold mb-1">Jefe Comercial <span class="text-xs font-normal text-gray-500">(automático según el comercial)</span></label>
+                                <input type="text" id="nombreJefeDisplay" value="${evento?.nombreJefe || 'Sin jefe asignado'}" disabled
+                                       class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-100 text-gray-600">
+                                <input type="hidden" name="nombreJefe" value="${evento?.nombreJefe || ''}">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold mb-1">% Jefe Comercial <span class="text-xs font-normal text-gray-500">(del 10% base · 10 = 1% de ventas)</span></label>
+                                <input type="number" name="comisionJefe" step="0.01" min="0" max="100"
+                                       value="${evento?.comisionJefe || 0}" onchange="actualizarCalculos()"
+                                       class="w-full border border-gray-300 rounded px-3 py-2">
+                            </div>
                         </div>
 
                         <input type="hidden" name="estado" value="${evento?.estado || 'pendiente'}">
@@ -668,6 +704,10 @@ Estado: ${e.estado}`);
                                         <span>Retorno Grupo:</span>
                                         <span id="prevGrupo" class="font-bold">0.00€</span>
                                     </div>
+                                    <div class="flex justify-between mb-1">
+                                        <span>Jefe Comercial:</span>
+                                        <span id="prevJefe" class="font-bold">0.00€</span>
+                                    </div>
                                     <div class="flex justify-between pt-3 border-t-2 border-blue-200">
                                         <span class="font-bold text-lg">NETO ENTRADASYA:</span>
                                         <span id="prevNeto" class="font-bold text-xl text-green-600">0.00€</span>
@@ -690,6 +730,24 @@ Estado: ${e.estado}`);
             `;
         }
 
+        // Autorrellena el campo % Jefe Comercial y el nombre del jefe al elegir un comercial
+        function actualizarJefeAuto() {
+            const form = document.getElementById('formEvento');
+            if (!form) return;
+            const jefe = obtenerJefeDeComercial(form.nombreComercial.value);
+            const displayJefe = document.getElementById('nombreJefeDisplay');
+            if (jefe) {
+                form.nombreJefe.value = jefe.nombre;
+                if (displayJefe) displayJefe.value = jefe.nombre;
+                // 10 = 10% del 10% base = 1% de las ventas totales (comisión estándar de equipo)
+                form.comisionJefe.value = 10;
+            } else {
+                form.nombreJefe.value = '';
+                if (displayJefe) displayJefe.value = 'Sin jefe asignado';
+                form.comisionJefe.value = 0;
+            }
+        }
+
         function actualizarCalculos() {
             const form = document.getElementById('formEvento');
             if (!form) return;
@@ -699,8 +757,9 @@ Estado: ${e.estado}`);
             const pcProm = parseFloat(form.retornoPromotor.value) || 0;
             const pcSala = parseFloat(form.retornoSala.value) || 0;
             const pcGrupo = parseFloat(form.retornoGrupo.value) || 0;
+            const pcJefe = parseFloat(form.comisionJefe.value) || 0;
             
-            const calc = calcularEvento(ventas, pcCom, pcProm, pcSala, pcGrupo);
+            const calc = calcularEvento(ventas, pcCom, pcProm, pcSala, pcGrupo, pcJefe);
             
             document.getElementById('prevVivetix').textContent = calc.importeVivetix.toFixed(2) + '€';
             document.getElementById('prevBase').textContent = calc.importeEntradasYaBase.toFixed(2) + '€';
@@ -708,6 +767,7 @@ Estado: ${e.estado}`);
             document.getElementById('prevPromotor').textContent = calc.importeRetornoPromotor.toFixed(2) + '€';
             document.getElementById('prevSala').textContent = calc.importeRetornoSala.toFixed(2) + '€';
             document.getElementById('prevGrupo').textContent = calc.importeRetornoGrupo.toFixed(2) + '€';
+            document.getElementById('prevJefe').textContent = calc.importeJefe.toFixed(2) + '€';
             document.getElementById('prevNeto').textContent = calc.netoEntradasYa.toFixed(2) + '€';
         }
 
@@ -722,6 +782,8 @@ Estado: ${e.estado}`);
                 grupo: form.grupo.value,
                 comisionComercial: parseFloat(form.comisionComercial.value) || 0,
                 nombreComercial: form.nombreComercial.value,
+                comisionJefe: parseFloat(form.comisionJefe.value) || 0,
+                nombreJefe: form.nombreJefe.value || '',
                 retornoPromotor: parseFloat(form.retornoPromotor.value) || 0,
                 retornoSala: parseFloat(form.retornoSala.value) || 0,
                 retornoGrupo: parseFloat(form.retornoGrupo.value) || 0,
@@ -852,11 +914,18 @@ Estado: ${e.estado}`);
         }
 
         function renderComerciales() {
-            // Calcular totales por comercial
+            // Calcular totales por comercial (comisión personal + comisión de equipo si es Jefe)
             const statsComerciales = state.comerciales.map(com => {
                 const eventosComercial = state.eventos.filter(e => (e.nombreComercial||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
                 const totalComision = eventosComercial.reduce((s, e) => s + e.importeComercial, 0);
-                return { ...com, eventos: eventosComercial, totalComision };
+                let totalEquipo = 0, eventosEquipo = 0, miembrosEquipo = [];
+                if (com.tipo === 'jefe') {
+                    const eventosDelEquipo = state.eventos.filter(e => (e.nombreJefe||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
+                    totalEquipo = eventosDelEquipo.reduce((s, e) => s + (e.importeJefe||0), 0);
+                    eventosEquipo = eventosDelEquipo.length;
+                    miembrosEquipo = state.comerciales.filter(c => c.jefeId === com.id);
+                }
+                return { ...com, eventos: eventosComercial, totalComision, totalEquipo, eventosEquipo, miembrosEquipo };
             });
             
             return `
@@ -865,7 +934,7 @@ Estado: ${e.estado}`);
                         <div class="flex justify-between items-center">
                             <div>
                                 <h2 class="text-2xl font-bold">💼 Gestión de Comerciales</h2>
-                                <p class="text-sm text-gray-600 mt-1">Control de comisiones por comercial</p>
+                                <p class="text-sm text-gray-600 mt-1">Control de comisiones por comercial y Jefe Comercial</p>
                             </div>
                             <button onclick="mostrarFormularioComercial()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold">
                                 ➕ Nuevo Comercial
@@ -878,19 +947,34 @@ Estado: ${e.estado}`);
                     <div class="grid md:grid-cols-3 gap-6">
                         ${statsComerciales.map(com => `
                             <div class="bg-white rounded-lg shadow overflow-hidden">
-                                <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4">
-                                    <h3 class="text-xl font-bold">${com.nombre}</h3>
-                                    <p class="text-sm opacity-90">% Comisión: ${com.comisionDefecto}%</p>
+                                <div class="bg-gradient-to-r ${com.tipo === 'jefe' ? 'from-purple-600 to-purple-700' : 'from-blue-500 to-blue-600'} text-white p-4">
+                                    <h3 class="text-xl font-bold">${com.tipo === 'jefe' ? '👑 ' : ''}${com.nombre}</h3>
+                                    <p class="text-sm opacity-90">% Comisión: ${com.comisionDefecto}% ${com.tipo === 'jefe' ? '· Jefe Comercial' : (com.jefeId ? '· Equipo: ' + (state.comerciales.find(j => j.id === com.jefeId)?.nombre || '') : '')}</p>
                                 </div>
                                 <div class="p-6">
                                     <div class="mb-4">
-                                        <div class="text-sm text-gray-600">Total Comisiones</div>
+                                        <div class="text-sm text-gray-600">Comisión Personal</div>
                                         <div class="text-3xl font-bold text-green-600">${com.totalComision.toFixed(2)}€</div>
                                     </div>
+                                    ${com.tipo === 'jefe' ? `
+                                    <div class="mb-4">
+                                        <div class="text-sm text-gray-600">Comisión de Equipo (1%)</div>
+                                        <div class="text-2xl font-bold text-purple-600">${com.totalEquipo.toFixed(2)}€</div>
+                                    </div>
+                                    <div class="mb-4">
+                                        <div class="text-sm text-gray-600">Total Jefe (personal + equipo)</div>
+                                        <div class="text-xl font-bold text-gray-800">${(com.totalComision + com.totalEquipo).toFixed(2)}€</div>
+                                    </div>
+                                    <div class="mb-4">
+                                        <div class="text-sm text-gray-600">Comerciales en su equipo</div>
+                                        <div class="text-2xl font-bold">${com.miembrosEquipo.length}</div>
+                                    </div>
+                                    ` : `
                                     <div class="mb-4">
                                         <div class="text-sm text-gray-600">Eventos Asignados</div>
                                         <div class="text-2xl font-bold">${com.eventos.length}</div>
                                     </div>
+                                    `}
                                     <div class="flex gap-2">
                                         <button onclick="editarComercial('${com.id}')" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded font-semibold text-sm">
                                             ✏️ Editar
@@ -933,16 +1017,32 @@ Estado: ${e.estado}`);
             const detalleEventos = eventos.map(e => 
                 `${e.fecha} - ${e.nombre}: ${e.importeComercial.toFixed(2)}€`
             ).join('\n');
+
+            let bloqueEquipo = '';
+            if (com.tipo === 'jefe') {
+                const eventosEquipo = state.eventos.filter(e => (e.nombreJefe||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
+                const totalEquipo = eventosEquipo.reduce((s, e) => s + (e.importeJefe||0), 0);
+                const miembros = state.comerciales.filter(c => c.jefeId === com.id).map(c => c.nombre).join(', ') || 'Sin comerciales asignados';
+                bloqueEquipo = `
+
+👑 COMO JEFE COMERCIAL:
+Equipo: ${miembros}
+Eventos del equipo: ${eventosEquipo.length}
+Comisión de equipo (1%): ${totalEquipo.toFixed(2)}€
+TOTAL (personal + equipo): ${(total + totalEquipo).toFixed(2)}€`;
+            }
             
             alert(`💼 DETALLE COMERCIAL
 
 Nombre: ${com.nombre}
+Rango: ${com.tipo === 'jefe' ? 'Jefe Comercial' : 'Comercial Normal'}
 Comisión por defecto: ${com.comisionDefecto}%
 Estado: ${com.activo ? 'Activo' : 'Inactivo'}
 
-📊 ESTADÍSTICAS:
+📊 ESTADÍSTICAS PERSONALES:
 Eventos asignados: ${eventos.length}
 Total comisiones: ${total.toFixed(2)}€
+${bloqueEquipo}
 
 📋 EVENTOS:
 ${detalleEventos || 'Sin eventos asignados'}`);
@@ -976,6 +1076,22 @@ ${detalleEventos || 'Sin eventos asignados'}`);
                                 </select>
                             </div>
                         </div>
+                        <div class="grid md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-semibold mb-1">Rango</label>
+                                <select name="tipo" class="w-full border border-gray-300 rounded px-3 py-2">
+                                    <option value="comercial" ${comercial?.tipo !== 'jefe' ? 'selected' : ''}>Comercial Normal</option>
+                                    <option value="jefe" ${comercial?.tipo === 'jefe' ? 'selected' : ''}>Jefe Comercial</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold mb-1">Depende de Jefe Comercial <span class="text-xs font-normal text-gray-500">(si aplica)</span></label>
+                                <select name="jefeId" class="w-full border border-gray-300 rounded px-3 py-2">
+                                    <option value="">Sin jefe asignado</option>
+                                    ${state.comerciales.filter(c => c.tipo === 'jefe' && c.id !== comercial?.id).map(j => `<option value="${j.id}" ${comercial?.jefeId === j.id ? 'selected' : ''}>${esc(j.nombre)}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
                         <div class="flex gap-3">
                             <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold">
                                 💾 Guardar
@@ -996,7 +1112,9 @@ ${detalleEventos || 'Sin eventos asignados'}`);
                 id: state.comercialEditando && state.comercialEditando !== '' ? state.comercialEditando : 'com' + Date.now(),
                 nombre: form.nombre.value,
                 comisionDefecto: parseFloat(form.comisionDefecto.value),
-                activo: form.activo.value === 'true'
+                activo: form.activo.value === 'true',
+                tipo: form.tipo.value === 'jefe' ? 'jefe' : 'comercial',
+                jefeId: form.tipo.value === 'jefe' ? '' : (form.jefeId.value || '')
             };
             
             if (state.comercialEditando && state.comercialEditando !== '') {
