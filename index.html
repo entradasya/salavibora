@@ -109,12 +109,15 @@
             ];
             const config = await Storage.load('config') || {
                 comisionVivetix: 2.5,
-                comisionEntradasYa: 7.5,
-                comisionEntradasYaPromotor: 10,
+                comisionEntradasYa: 10,
                 iva: 21,
                 mesActual: new Date().toISOString().slice(0, 7)
             };
-            if (config.comisionEntradasYaPromotor === undefined) config.comisionEntradasYaPromotor = 10;
+            // Migración: la base EntradasYa pasa de 7,5% a 10% siempre
+            if (config.comisionEntradasYa === 7.5 || config.comisionEntradasYa === undefined) {
+                config.comisionEntradasYa = 10;
+            }
+            delete config.comisionEntradasYaPromotor;
             
             state.eventos = eventos;
             state.comerciales = comerciales;
@@ -123,6 +126,7 @@
             state.grupos = grupos;
             state.config = config;
             
+            await Storage.save('config', config); // persiste la migración a 10% ya mismo
             render();
             setTimeout(actualizarCalculos, 100);
         }
@@ -159,14 +163,12 @@
             const ventasBrutas = parseFloat(ventas) || 0;
             const comVivetix = state.config.comisionVivetix;
             const comEntradasYa = state.config.comisionEntradasYa;
-            const comEntradasYaPromotor = state.config.comisionEntradasYaPromotor ?? 10;
             
             const importeVivetix = (ventasBrutas * comVivetix) / 100;
             const importeEntradasYaBase = (ventasBrutas * comEntradasYa) / 100;
-            const importeEntradasYaBasePromotor = (ventasBrutas * comEntradasYaPromotor) / 100;
             
             const importeComercial = (importeEntradasYaBase * (parseFloat(pcComercial) || 0)) / 100;
-            const importeRetornoPromotor = (importeEntradasYaBasePromotor * (parseFloat(pcRetornoPromotor) || 0)) / 100;
+            const importeRetornoPromotor = (importeEntradasYaBase * (parseFloat(pcRetornoPromotor) || 0)) / 100;
             const importeRetornoSala = (importeEntradasYaBase * (parseFloat(pcRetornoSala) || 0)) / 100;
             const importeRetornoGrupo = (importeEntradasYaBase * (parseFloat(pcRetornoGrupo) || 0)) / 100;
             
@@ -175,7 +177,6 @@
             return {
                 importeVivetix,
                 importeEntradasYaBase,
-                importeEntradasYaBasePromotor,
                 importeComercial,
                 importeRetornoPromotor,
                 importeRetornoSala,
@@ -545,7 +546,7 @@ Vivetix (${state.config.comisionVivetix}%): ${e.importeVivetix.toFixed(2)}€
 EntradasYa Base (${state.config.comisionEntradasYa}%): ${e.importeEntradasYaBase.toFixed(2)}€
 
 Comercial (${e.comisionComercial}%): ${e.importeComercial.toFixed(2)}€
-Retorno Promotor (${e.retornoPromotor}% de base 10%): ${e.importeRetornoPromotor.toFixed(2)}€
+Retorno Promotor (${e.retornoPromotor}%): ${e.importeRetornoPromotor.toFixed(2)}€
 Retorno Sala (${e.retornoSala}%): ${e.importeRetornoSala.toFixed(2)}€
 Retorno Grupo (${e.retornoGrupo}%): ${e.importeRetornoGrupo.toFixed(2)}€
 
@@ -601,7 +602,7 @@ Estado: ${e.estado}`);
 
                         <div class="grid md:grid-cols-4 gap-4 mb-4">
                             <div>
-                                <label class="block text-sm font-semibold mb-1">% Comercial <span class="text-xs font-normal text-gray-500">(del 7,5% base)</span></label>
+                                <label class="block text-sm font-semibold mb-1">% Comercial <span class="text-xs font-normal text-gray-500">(del 10% base)</span></label>
                                 <input type="number" name="comisionComercial" step="0.01" min="0" max="100" 
                                        value="${evento?.comisionComercial || 0}" onchange="actualizarCalculos()"
                                        class="w-full border border-gray-300 rounded px-3 py-2">
@@ -613,13 +614,13 @@ Estado: ${e.estado}`);
                                        class="w-full border border-gray-300 rounded px-3 py-2">
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold mb-1">% Retorno Sala <span class="text-xs font-normal text-gray-500">(del 7,5% base)</span></label>
+                                <label class="block text-sm font-semibold mb-1">% Retorno Sala <span class="text-xs font-normal text-gray-500">(del 10% base)</span></label>
                                 <input type="number" name="retornoSala" step="0.01" min="0" max="100"
                                        value="${evento?.retornoSala || 0}" onchange="actualizarCalculos()"
                                        class="w-full border border-gray-300 rounded px-3 py-2">
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold mb-1">% Retorno Grupo <span class="text-xs font-normal text-gray-500">(del 7,5% base)</span></label>
+                                <label class="block text-sm font-semibold mb-1">% Retorno Grupo <span class="text-xs font-normal text-gray-500">(del 10% base)</span></label>
                                 <input type="number" name="retornoGrupo" step="0.01" min="0" max="100"
                                        value="${evento?.retornoGrupo || 0}" onchange="actualizarCalculos()"
                                        class="w-full border border-gray-300 rounded px-3 py-2">
@@ -651,7 +652,7 @@ Estado: ${e.estado}`);
                                         <span id="prevComercial" class="font-bold">0.00€</span>
                                     </div>
                                     <div class="flex justify-between mb-1">
-                                        <span>Retorno Promotor (base 10%):</span>
+                                        <span>Retorno Promotor:</span>
                                         <span id="prevPromotor" class="font-bold">0.00€</span>
                                     </div>
                                 </div>
@@ -1484,7 +1485,7 @@ ${detalleEventos || 'Sin eventos asignados'}`);
 
                     <div class="bg-white rounded-lg shadow p-6">
                         <h3 class="text-xl font-bold mb-4">Comisiones Base</h3>
-                        <div class="grid md:grid-cols-4 gap-4">
+                        <div class="grid md:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-semibold mb-1">% Vivetix</label>
                                 <input type="number" step="0.01" value="${state.config.comisionVivetix}"
@@ -1492,15 +1493,9 @@ ${detalleEventos || 'Sin eventos asignados'}`);
                                        class="w-full border border-gray-300 rounded px-3 py-2">
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold mb-1">% EntradasYa <span class="text-xs font-normal text-gray-500">(base Comercial/Sala/Grupo)</span></label>
+                                <label class="block text-sm font-semibold mb-1">% EntradasYa <span class="text-xs font-normal text-gray-500">(base de Comercial/Promotor/Sala/Grupo)</span></label>
                                 <input type="number" step="0.01" value="${state.config.comisionEntradasYa}"
                                        onchange="state.config.comisionEntradasYa = parseFloat(this.value); guardarState(); render();"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% EntradasYa Promotor <span class="text-xs font-normal text-gray-500">(base Retorno Promotor)</span></label>
-                                <input type="number" step="0.01" value="${state.config.comisionEntradasYaPromotor ?? 10}"
-                                       onchange="state.config.comisionEntradasYaPromotor = parseFloat(this.value); guardarState(); render();"
                                        class="w-full border border-gray-300 rounded px-3 py-2">
                             </div>
                             <div>
