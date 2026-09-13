@@ -157,6 +157,7 @@
         function generarId() {
             return 'EVT' + Date.now() + Math.random().toString(36).substr(2, 9);
         }
+        function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
         // Calcular comisiones automáticamente
         function calcularEvento(ventas, pcComercial, pcRetornoPromotor, pcRetornoSala, pcRetornoGrupo) {
@@ -302,7 +303,7 @@
             
             // Hoja 3: Comerciales
             const dataComerciales = state.comerciales.map(com => {
-                const eventos = state.eventos.filter(e => e.nombreComercial === com.nombre);
+                const eventos = state.eventos.filter(e => (e.nombreComercial||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
                 const totalComision = eventos.reduce((s, e) => s + e.importeComercial, 0);
                 return {
                     'Nombre': com.nombre,
@@ -628,9 +629,11 @@ Estado: ${e.estado}`);
                         </div>
 
                         <div>
-                            <label class="block text-sm font-semibold mb-1">Nombre Comercial</label>
-                            <input type="text" name="nombreComercial" value="${evento?.nombreComercial || ''}"
-                                   class="w-full border border-gray-300 rounded px-3 py-2">
+                            <label class="block text-sm font-semibold mb-1">Comercial</label>
+                            <select name="nombreComercial" class="w-full border border-gray-300 rounded px-3 py-2">
+                                <option value="">Sin comercial asignado</option>
+                                ${state.comerciales.map(com => `<option value="${esc(com.nombre)}" ${evento?.nombreComercial === com.nombre ? 'selected' : ''}>${esc(com.nombre)}</option>`).join('')}
+                            </select>
                         </div>
 
                         <input type="hidden" name="estado" value="${evento?.estado || 'pendiente'}">
@@ -851,7 +854,7 @@ Estado: ${e.estado}`);
         function renderComerciales() {
             // Calcular totales por comercial
             const statsComerciales = state.comerciales.map(com => {
-                const eventosComercial = state.eventos.filter(e => e.nombreComercial === com.nombre);
+                const eventosComercial = state.eventos.filter(e => (e.nombreComercial||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
                 const totalComision = eventosComercial.reduce((s, e) => s + e.importeComercial, 0);
                 return { ...com, eventos: eventosComercial, totalComision };
             });
@@ -924,7 +927,7 @@ Estado: ${e.estado}`);
             const com = state.comerciales.find(c => c.id === id);
             if (!com) return;
             
-            const eventos = state.eventos.filter(e => e.nombreComercial === com.nombre);
+            const eventos = state.eventos.filter(e => (e.nombreComercial||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
             const total = eventos.reduce((s, e) => s + e.importeComercial, 0);
             
             const detalleEventos = eventos.map(e => 
