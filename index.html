@@ -1,1733 +1,915 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EntradasYa - Sistema de Control v1.0</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-        
-        const firebaseConfig = {
-            apiKey: "AIzaSyDqeFuATLUrJ3sfJIn8iDfjdnqvHbB6t8s",
-            authDomain: "entradasya-87c7c.firebaseapp.com",
-            projectId: "entradasya-87c7c",
-            storageBucket: "entradasya-87c7c.firebasestorage.app",
-            messagingSenderId: "335830211416",
-            appId: "1:335830211416:web:9685b916af413222f1632d"
-        };
-        
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        window.firebaseDB = db;
-        window.firebaseDoc = doc;
-        window.firebaseSetDoc = setDoc;
-        window.firebaseGetDoc = getDoc;
-        window.firebaseOnSnapshot = onSnapshot;
-    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EntradasYa CRM</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc,
+  onSnapshot, query, where, writeBatch, getDocs, getDoc, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+window.__fb = { initializeApp, getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, writeBatch, getDocs, getDoc, serverTimestamp };
+window.dispatchEvent(new Event("fb-ready"));
+</script>
+<style>
+  :root{
+    --bg:#0f1720; --panel:#16202b; --panel2:#1c2733; --line:#26333f;
+    --ink:#e7edf3; --ink-dim:#8fa1b0; --accent:#3ecf8e; --accent-dim:#255c46;
+    --warn:#e0a53e; --danger:#e0603e; --info:#4d8ff0;
+  }
+  body{background:var(--bg); color:var(--ink); font-family:'Inter',ui-sans-serif,system-ui,sans-serif;}
+  ::-webkit-scrollbar{width:8px;height:8px;} ::-webkit-scrollbar-thumb{background:#2c3a48;border-radius:4px;}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:10px;}
+  .panel2{background:var(--panel2); border:1px solid var(--line); border-radius:8px;}
+  .btn{padding:.55rem 1rem; border-radius:8px; font-weight:600; font-size:.875rem; transition:.15s; cursor:pointer;}
+  .btn-accent{background:var(--accent); color:#08130d;} .btn-accent:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent; border:1px solid var(--line); color:var(--ink);} .btn-ghost:hover{border-color:#3a4a5a;}
+  .btn-danger{background:var(--danger); color:#1a0704;} .btn-danger:hover{filter:brightness(1.1);}
+  input,select,textarea{background:#0f1720; border:1px solid var(--line); color:var(--ink); border-radius:7px; padding:.5rem .65rem; font-size:.875rem; width:100%;}
+  input:focus,select:focus,textarea:focus{outline:none; border-color:var(--accent);}
+  label{font-size:.72rem; color:var(--ink-dim); font-weight:600; letter-spacing:.02em;}
+  .navitem{display:flex; align-items:center; gap:.6rem; padding:.6rem .8rem; border-radius:8px; color:var(--ink-dim); cursor:pointer; font-size:.875rem; font-weight:500;}
+  .navitem:hover{background:var(--panel2); color:var(--ink);}
+  .navitem.active{background:var(--accent-dim); color:var(--accent);}
+  .badge{padding:.15rem .55rem; border-radius:999px; font-size:.7rem; font-weight:700; letter-spacing:.02em; white-space:nowrap;}
+  table{width:100%; border-collapse:collapse; font-size:.83rem;}
+  th{text-align:left; color:var(--ink-dim); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; padding:.5rem .7rem; border-bottom:1px solid var(--line);}
+  td{padding:.55rem .7rem; border-bottom:1px solid var(--line);}
+  tr.row:hover{background:var(--panel2); cursor:pointer;}
+  .modal-bg{position:fixed; inset:0; background:rgba(6,10,14,.7); display:flex; align-items:flex-start; justify-content:center; z-index:50; padding:2rem 1rem; overflow-y:auto;}
+  .tab{padding:.5rem .9rem; border-radius:7px; font-size:.8rem; font-weight:600; color:var(--ink-dim); cursor:pointer;}
+  .tab.active{background:var(--panel2); color:var(--accent);}
+  .stat-num{font-size:1.7rem; font-weight:800; line-height:1;}
+  .kicker{font-size:.68rem; color:var(--ink-dim); font-weight:600; text-transform:uppercase; letter-spacing:.05em;}
+</style>
 </head>
-<body class="bg-gray-50 text-gray-900">
-    <div id="app"></div>
-    <script>
-        // ===== SISTEMA ENTRADASYA v2.0 - CON FIREBASE =====
-        
-        // Sistema de almacenamiento en Firebase
-        const Storage = {
-            async save(key, data) {
-                try {
-                    // Guardar en Firebase
-                    const docRef = window.firebaseDoc(window.firebaseDB, 'entradasya', key);
-                    await window.firebaseSetDoc(docRef, { data: JSON.stringify(data) });
-                    
-                    // También en localStorage como backup
-                    localStorage.setItem('entradasya_' + key, JSON.stringify(data));
-                    return true;
-                } catch (e) {
-                    console.error('Error guardando:', e);
-                    // Si falla Firebase, al menos guarda en localStorage
-                    try {
-                        localStorage.setItem('entradasya_' + key, JSON.stringify(data));
-                        return true;
-                    } catch (e2) {
-                        return false;
-                    }
-                }
-            },
-            async load(key) {
-                try {
-                    // Intentar cargar de Firebase primero
-                    const docRef = window.firebaseDoc(window.firebaseDB, 'entradasya', key);
-                    const docSnap = await window.firebaseGetDoc(docRef);
-                    
-                    if (docSnap.exists()) {
-                        const data = JSON.parse(docSnap.data().data);
-                        // Guardar en localStorage como backup
-                        localStorage.setItem('entradasya_' + key, JSON.stringify(data));
-                        return data;
-                    }
-                    
-                    // Si no existe en Firebase, intentar localStorage
-                    const localData = localStorage.getItem('entradasya_' + key);
-                    return localData ? JSON.parse(localData) : null;
-                } catch (e) {
-                    console.error('Error cargando:', e);
-                    // Fallback a localStorage
-                    try {
-                        const data = localStorage.getItem('entradasya_' + key);
-                        return data ? JSON.parse(data) : null;
-                    } catch (e2) {
-                        return null;
-                    }
-                }
-            },
-            clear() {
-                const keys = Object.keys(localStorage).filter(k => k.startsWith('entradasya_'));
-                keys.forEach(k => localStorage.removeItem(k));
-            }
-        };
-        
-        // Cargar datos de forma asíncrona
-        async function cargarDatosIniciales() {
-            const eventos = await Storage.load('eventos') || [];
-            const comerciales = await Storage.load('comerciales') || [
-                { id: 'com1', nombre: 'Juan Pérez', comisionDefecto: 3, activo: true },
-                { id: 'com2', nombre: 'María García', comisionDefecto: 2.5, activo: true }
-            ];
-            const promotores = await Storage.load('promotores') || [
-                { id: 'prom1', nombre: 'Promotor A', retornoDefecto: 10 },
-                { id: 'prom2', nombre: 'Promotor B', retornoDefecto: 15 }
-            ];
-            const salas = await Storage.load('salas') || [
-                { id: 'sala1', nombre: 'Sala X', retornoDefecto: 5 },
-                { id: 'sala2', nombre: 'Sala Y', retornoDefecto: 8 }
-            ];
-            const grupos = await Storage.load('grupos') || [
-                { id: 'grupo1', nombre: 'Banda Rock' },
-                { id: 'grupo2', nombre: 'DJ Elite' }
-            ];
-            const config = await Storage.load('config') || {
-                comisionVivetix: 2.5,
-                comisionEntradasYa: 10,
-                iva: 21,
-                mesActual: new Date().toISOString().slice(0, 7)
-            };
-            // Migración: la base EntradasYa pasa de 7,5% a 10% siempre
-            if (config.comisionEntradasYa === 7.5 || config.comisionEntradasYa === undefined) {
-                config.comisionEntradasYa = 10;
-            }
-            delete config.comisionEntradasYaPromotor;
-            
-            state.eventos = eventos;
-            state.comerciales = comerciales;
-            state.promotores = promotores;
-            state.salas = salas;
-            state.grupos = grupos;
-            state.config = config;
-            
-            await Storage.save('config', config); // persiste la migración a 10% ya mismo
-            render();
-            setTimeout(actualizarCalculos, 100);
-        }
-        
-        // Cargar datos guardados o usar valores por defecto
-        const state = {
-            vistaActual: 'eventos',
-            eventos: [],
-            comerciales: [],
-            promotores: [],
-            salas: [],
-            grupos: [],
-            config: {},
-            eventoEditando: null
-        };
-
-        // Auto-guardar cuando cambian los datos
-        async function guardarState() {
-            await Storage.save('eventos', state.eventos);
-            await Storage.save('comerciales', state.comerciales);
-            await Storage.save('promotores', state.promotores);
-            await Storage.save('salas', state.salas);
-            await Storage.save('grupos', state.grupos);
-            await Storage.save('config', state.config);
-        }
-
-        // Generar ID único
-        function generarId() {
-            return 'EVT' + Date.now() + Math.random().toString(36).substr(2, 9);
-        }
-        function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-
-        // Calcular comisiones automáticamente
-        function calcularEvento(ventas, pcComercial, pcRetornoPromotor, pcRetornoSala, pcRetornoGrupo, pcJefe) {
-            const ventasBrutas = parseFloat(ventas) || 0;
-            const comVivetix = state.config.comisionVivetix;
-            const comEntradasYa = state.config.comisionEntradasYa;
-            
-            const importeVivetix = (ventasBrutas * comVivetix) / 100;
-            const importeEntradasYaBase = (ventasBrutas * comEntradasYa) / 100;
-            
-            const importeComercial = (importeEntradasYaBase * (parseFloat(pcComercial) || 0)) / 100;
-            const importeRetornoPromotor = (importeEntradasYaBase * (parseFloat(pcRetornoPromotor) || 0)) / 100;
-            const importeRetornoSala = (importeEntradasYaBase * (parseFloat(pcRetornoSala) || 0)) / 100;
-            const importeRetornoGrupo = (importeEntradasYaBase * (parseFloat(pcRetornoGrupo) || 0)) / 100;
-            const importeJefe = (importeEntradasYaBase * (parseFloat(pcJefe) || 0)) / 100;
-            
-            const netoEntradasYa = importeEntradasYaBase - importeComercial - importeRetornoPromotor - importeRetornoSala - importeRetornoGrupo - importeJefe;
-            
-            return {
-                importeVivetix,
-                importeEntradasYaBase,
-                importeComercial,
-                importeRetornoPromotor,
-                importeRetornoSala,
-                importeRetornoGrupo,
-                importeJefe,
-                netoEntradasYa
-            };
-        }
-
-        // Dado el nombre de un comercial, devuelve su Jefe Comercial (o null si no tiene)
-        function obtenerJefeDeComercial(nombreComercial) {
-            const com = state.comerciales.find(c => (c.nombre||'').trim().toLowerCase() === (nombreComercial||'').trim().toLowerCase());
-            if (!com || !com.jefeId) return null;
-            return state.comerciales.find(c => c.id === com.jefeId) || null;
-        }
-
-        // Guardar evento
-        async function guardarEvento(datos) {
-            const calculos = calcularEvento(
-                datos.ventasBrutas,
-                datos.comisionComercial,
-                datos.retornoPromotor,
-                datos.retornoSala,
-                datos.retornoGrupo,
-                datos.comisionJefe
-            );
-            
-            const evento = {
-                id: state.eventoEditando || generarId(),
-                ...datos,
-                ...calculos,
-                fechaCreacion: state.eventoEditando ? 
-                    state.eventos.find(e => e.id === state.eventoEditando).fechaCreacion : 
-                    new Date().toISOString()
-            };
-            
-            if (state.eventoEditando) {
-                const idx = state.eventos.findIndex(e => e.id === state.eventoEditando);
-                state.eventos[idx] = evento;
-                state.eventoEditando = null;
-            } else {
-                state.eventos.push(evento);
-            }
-            
-            await guardarState(); // ← GUARDAR EN FIREBASE
-            alert('✅ Evento guardado');
-            render();
-        }
-
-        // Borrar evento
-        async function borrarEvento(id) {
-            const evento = state.eventos.find(e => e.id === id);
-            if (!evento) return;
-            if (!confirm(`⚠️ ¿Borrar "${evento.nombre}" (${evento.fecha})?\nEsta acción no se puede deshacer.`)) return;
-            state.eventos = state.eventos.filter(e => e.id !== id);
-            await guardarState();
-            render();
-        }
-
-        // Cambiar estado evento
-        function cambiarEstado(id, nuevoEstado) {
-            const evento = state.eventos.find(e => e.id === id);
-            if (evento) {
-                evento.estado = nuevoEstado;
-                if (nuevoEstado === 'facturado') evento.fechaFacturacion = new Date().toISOString();
-                if (nuevoEstado === 'cobrado') evento.fechaCobro = new Date().toISOString();
-                guardarState(); // ← GUARDAR
-                render();
-            }
-        }
-
-        // Exportar CSV para Manager.io
-        function exportarCSVManagerio(mes) {
-            const eventosMes = state.eventos.filter(e => 
-                e.fecha.slice(0, 7) === mes && 
-                (e.estado === 'facturado' || e.estado === 'cobrado')
-            );
-            
-            const baseImponible = eventosMes.reduce((s, e) => s + e.netoEntradasYa, 0);
-            const iva = (baseImponible * state.config.iva) / 100;
-            const total = baseImponible + iva;
-            
-            const csv = `Fecha,Cliente,Concepto,Base,IVA,Total\n${mes}-28,Vivetix,Factura ${mes},${baseImponible.toFixed(2)},${iva.toFixed(2)},${total.toFixed(2)}`;
-            
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `entradasya-factura-${mes}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        // Exportar Excel completo
-        function exportarExcelCompleto() {
-            // Hoja 1: Eventos
-            const dataEventos = state.eventos.map(e => ({
-                'ID': e.id,
-                'Fecha': e.fecha,
-                'Nombre': e.nombre,
-                'Promotor': e.promotor,
-                'Sala': e.sala,
-                'Grupo': e.grupo || '',
-                'Ventas Brutas': e.ventasBrutas,
-                'Vivetix': e.importeVivetix,
-                'EntradasYa Base': e.importeEntradasYaBase,
-                'Nombre Comercial': e.nombreComercial || '',
-                'Comercial': e.importeComercial,
-                'Nombre Jefe': e.nombreJefe || '',
-                'Jefe Comercial': e.importeJefe || 0,
-                'Ret. Promotor': e.importeRetornoPromotor,
-                'Ret. Sala': e.importeRetornoSala,
-                'Ret. Grupo': e.importeRetornoGrupo,
-                'NETO EntradasYa': e.netoEntradasYa,
-                'Estado': e.estado
-            }));
-            
-            // Hoja 2: Por Mes
-            const ventasPorMes = {};
-            state.eventos.forEach(e => {
-                const mes = e.fecha.slice(0, 7);
-                if (!ventasPorMes[mes]) ventasPorMes[mes] = { ventas: 0, neto: 0, eventos: 0 };
-                ventasPorMes[mes].ventas += e.ventasBrutas;
-                ventasPorMes[mes].neto += e.netoEntradasYa;
-                ventasPorMes[mes].eventos++;
-            });
-            
-            const dataMensual = Object.keys(ventasPorMes).sort().map(mes => ({
-                'Mes': mes,
-                'Eventos': ventasPorMes[mes].eventos,
-                'Ventas': ventasPorMes[mes].ventas,
-                'Neto EntradasYa': ventasPorMes[mes].neto,
-                'Promedio/Evento': ventasPorMes[mes].neto / ventasPorMes[mes].eventos
-            }));
-            
-            // Hoja 3: Comerciales
-            const dataComerciales = state.comerciales.map(com => {
-                const eventos = state.eventos.filter(e => (e.nombreComercial||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
-                const totalComision = eventos.reduce((s, e) => s + e.importeComercial, 0);
-                const esJefe = com.tipo === 'jefe';
-                const eventosEquipo = esJefe ? state.eventos.filter(e => (e.nombreJefe||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase()) : [];
-                const totalEquipo = eventosEquipo.reduce((s, e) => s + (e.importeJefe||0), 0);
-                return {
-                    'Nombre': com.nombre,
-                    'Rango': esJefe ? 'Jefe Comercial' : 'Comercial',
-                    'Jefe Asignado': esJefe ? '' : (state.comerciales.find(j => j.id === com.jefeId)?.nombre || ''),
-                    '% Comisión': com.comisionDefecto,
-                    'Eventos Personales': eventos.length,
-                    'Comisión Personal': totalComision,
-                    'Eventos de Equipo': eventosEquipo.length,
-                    'Comisión de Equipo (1%)': totalEquipo,
-                    'Total': totalComision + totalEquipo
-                };
-            });
-            
-            // Crear workbook
-            const wb = XLSX.utils.book_new();
-            
-            const ws1 = XLSX.utils.json_to_sheet(dataEventos);
-            const ws2 = XLSX.utils.json_to_sheet(dataMensual);
-            const ws3 = XLSX.utils.json_to_sheet(dataComerciales);
-            
-            XLSX.utils.book_append_sheet(wb, ws1, 'Eventos');
-            XLSX.utils.book_append_sheet(wb, ws2, 'Por Mes');
-            XLSX.utils.book_append_sheet(wb, ws3, 'Comerciales');
-            
-            XLSX.writeFile(wb, `entradasya-completo-${new Date().toISOString().split('T')[0]}.xlsx`);
-        }
-
-        // Exportar todos los datos
-        function exportarDatos() {
-            const backup = {
-                version: '1.0',
-                fecha: new Date().toISOString(),
-                eventos: state.eventos,
-                comerciales: state.comerciales,
-                promotores: state.promotores,
-                salas: state.salas,
-                grupos: state.grupos,
-                config: state.config
-            };
-            
-            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `entradasya-backup-${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        // Importar datos
-        function importarDatos(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const backup = JSON.parse(e.target.result);
-                    if (confirm('⚠️ ¿Importar datos? Esto REEMPLAZARÁ todos los datos actuales.')) {
-                        state.eventos = backup.eventos || [];
-                        state.comerciales = backup.comerciales || state.comerciales;
-                        state.promotores = backup.promotores || state.promotores;
-                        state.salas = backup.salas || state.salas;
-                        state.grupos = backup.grupos || state.grupos;
-                        state.config = backup.config || state.config;
-                        guardarState(); // ← GUARDAR
-                        alert('✅ Datos importados');
-                        render();
-                    }
-                } catch (err) {
-                    alert('❌ Error: ' + err.message);
-                }
-            };
-            reader.readAsText(file);
-        }
-
-        function render() {
-            const app = document.getElementById('app');
-            
-            app.innerHTML = `
-                <div class="min-h-screen">
-                    <!-- Header -->
-                    <div class="bg-blue-600 text-white shadow-lg">
-                        <div class="max-w-7xl mx-auto px-4 py-6">
-                            <div class="flex justify-between items-center">
-                                <div>
-                                    <h1 class="text-3xl font-bold">🎫 EntradasYa</h1>
-                                    <p class="text-sm opacity-90 mt-1">Sistema de Control y Facturación v1.0</p>
-                                </div>
-                                <div class="text-right text-sm">
-                                    <div>Mes actual: <strong>${state.config.mesActual}</strong></div>
-                                    <div class="mt-1 flex items-center justify-end gap-2">
-                                        <span class="text-xs bg-green-500 px-2 py-1 rounded">✓ Datos guardados</span>
-                                        <button onclick="exportarDatos()" class="bg-blue-500 hover:bg-blue-400 px-3 py-1 rounded text-xs">
-                                            💾 Backup
-                                        </button>
-                                        <button onclick="document.getElementById('importFile').click()" class="bg-blue-500 hover:bg-blue-400 px-3 py-1 rounded text-xs">
-                                            📥 Importar
-                                        </button>
-                                        <input type="file" id="importFile" accept=".json" onchange="importarDatos(event)" style="display:none">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Navegación -->
-                    <div class="bg-white border-b shadow-sm">
-                        <div class="max-w-7xl mx-auto px-4">
-                            <div class="flex gap-1 overflow-x-auto py-2">
-                                ${['eventos', 'facturacion', 'comerciales', 'promotores', 'reportes', 'config'].map(vista => `
-                                    <button onclick="state.vistaActual='${vista}'; render();" 
-                                            class="px-6 py-3 rounded-lg whitespace-nowrap font-semibold ${
-                                                state.vistaActual === vista ? 
-                                                'bg-blue-600 text-white' : 
-                                                'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }">
-                                        ${vista === 'eventos' ? '📅 Eventos' : ''}
-                                        ${vista === 'facturacion' ? '💰 Facturación' : ''}
-                                        ${vista === 'comerciales' ? '💼 Comerciales' : ''}
-                                        ${vista === 'promotores' ? '🏢 Promotores/Salas' : ''}
-                                        ${vista === 'reportes' ? '📊 Reportes' : ''}
-                                        ${vista === 'config' ? '⚙️ Config' : ''}
-                                    </button>
-                                `).join('')}
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Contenido -->
-                    <div class="max-w-7xl mx-auto px-4 py-6">
-                        ${state.vistaActual === 'eventos' ? renderEventos() : ''}
-                        ${state.vistaActual === 'facturacion' ? renderFacturacion() : ''}
-                        ${state.vistaActual === 'comerciales' ? renderComerciales() : ''}
-                        ${state.vistaActual === 'promotores' ? renderPromotores() : ''}
-                        ${state.vistaActual === 'reportes' ? renderReportes() : ''}
-                        ${state.vistaActual === 'config' ? renderConfig() : ''}
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderEventos() {
-            return `
-                <div class="space-y-6">
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h2 class="text-2xl font-bold mb-4">📅 Gestión de Eventos</h2>
-                        <button onclick="mostrarFormularioEvento()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold">
-                            ➕ Nuevo Evento
-                        </button>
-                    </div>
-
-                    ${state.eventoEditando !== null ? renderFormularioEvento() : ''}
-
-                    <div class="bg-white rounded-lg shadow overflow-hidden">
-                        <div class="p-6">
-                            <h3 class="text-xl font-bold mb-4">Lista de Eventos</h3>
-                            ${state.eventos.length === 0 ? `
-                                <p class="text-center py-10 text-gray-500">No hay eventos registrados</p>
-                            ` : `
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-sm">
-                                        <thead class="bg-gray-50 border-b-2 border-gray-200">
-                                            <tr>
-                                                <th class="px-4 py-3 text-left font-semibold">Fecha</th>
-                                                <th class="px-4 py-3 text-left font-semibold">Nombre</th>
-                                                <th class="px-4 py-3 text-left font-semibold">Promotor</th>
-                                                <th class="px-4 py-3 text-right font-semibold">Ventas</th>
-                                                <th class="px-4 py-3 text-right font-semibold">Neto EntradasYa</th>
-                                                <th class="px-4 py-3 text-center font-semibold">Estado</th>
-                                                <th class="px-4 py-3 text-center font-semibold">Acciones</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-gray-200">
-                                            ${[...state.eventos].sort((a, b) => b.fecha.localeCompare(a.fecha)).map(e => `
-                                                <tr class="hover:bg-gray-50">
-                                                    <td class="px-4 py-3">${e.fecha}</td>
-                                                    <td class="px-4 py-3 font-semibold">${e.nombre}</td>
-                                                    <td class="px-4 py-3">${e.promotor}</td>
-                                                    <td class="px-4 py-3 text-right">${e.ventasBrutas.toFixed(2)}€</td>
-                                                    <td class="px-4 py-3 text-right font-bold text-green-600">${e.netoEntradasYa.toFixed(2)}€</td>
-                                                    <td class="px-4 py-3 text-center">
-                                                        <select onchange="cambiarEstado('${e.id}', this.value)" 
-                                                                class="px-3 py-1 rounded text-xs font-semibold ${
-                                                                    e.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                                                                    e.estado === 'realizado' ? 'bg-blue-100 text-blue-800' :
-                                                                    e.estado === 'facturado' ? 'bg-purple-100 text-purple-800' :
-                                                                    'bg-green-100 text-green-800'
-                                                                }">
-                                                            <option value="pendiente" ${e.estado === 'pendiente' ? 'selected' : ''}>🟡 Pendiente</option>
-                                                            <option value="realizado" ${e.estado === 'realizado' ? 'selected' : ''}>🔵 Realizado</option>
-                                                            <option value="facturado" ${e.estado === 'facturado' ? 'selected' : ''}>🟣 Facturado</option>
-                                                            <option value="cobrado" ${e.estado === 'cobrado' ? 'selected' : ''}>🟢 Cobrado</option>
-                                                        </select>
-                                                    </td>
-                                                    <td class="px-4 py-3 text-center">
-                                                        <button onclick="editarEvento('${e.id}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs mr-1">
-                                                            ✏️ Editar
-                                                        </button>
-                                                        <button onclick="verDetalleEvento('${e.id}')" class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs mr-1">
-                                                            👁️ Ver
-                                                        </button>
-                                                        <button onclick="borrarEvento('${e.id}')" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-xs">
-                                                            🗑️
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            `).join('')}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            `}
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        function mostrarFormularioEvento() {
-            state.eventoEditando = '';
-            render();
-        }
-
-        function editarEvento(id) {
-            state.eventoEditando = id;
-            render();
-        }
-
-        function verDetalleEvento(id) {
-            const e = state.eventos.find(ev => ev.id === id);
-            if (!e) return;
-            
-            alert(`📋 DETALLE EVENTO
-
-Nombre: ${e.nombre}
-Fecha: ${e.fecha}
-Promotor: ${e.promotor}
-Sala: ${e.sala}
-Grupo: ${e.grupo || '-'}
-
-💰 FINANCIERO:
-Ventas Brutas: ${e.ventasBrutas.toFixed(2)}€
-
-Vivetix (${state.config.comisionVivetix}%): ${e.importeVivetix.toFixed(2)}€
-EntradasYa Base (${state.config.comisionEntradasYa}%): ${e.importeEntradasYaBase.toFixed(2)}€
-
-Comercial${e.nombreComercial ? ' (' + e.nombreComercial + ')' : ''} (${e.comisionComercial}%): ${e.importeComercial.toFixed(2)}€
-Jefe Comercial${e.nombreJefe ? ' (' + e.nombreJefe + ')' : ''} (${e.comisionJefe||0}%): ${(e.importeJefe||0).toFixed(2)}€
-Retorno Promotor (${e.retornoPromotor}%): ${e.importeRetornoPromotor.toFixed(2)}€
-Retorno Sala (${e.retornoSala}%): ${e.importeRetornoSala.toFixed(2)}€
-Retorno Grupo (${e.retornoGrupo}%): ${e.importeRetornoGrupo.toFixed(2)}€
-
-🎯 NETO ENTRADASYA: ${e.netoEntradasYa.toFixed(2)}€
-
-Estado: ${e.estado}`);
-        }
-
-        function renderFormularioEvento() {
-            const evento = state.eventoEditando && state.eventoEditando !== '' ? 
-                state.eventos.find(e => e.id === state.eventoEditando) : null;
-            
-            return `
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h3 class="text-xl font-bold mb-4">${evento ? '✏️ Editar Evento' : '➕ Nuevo Evento'}</h3>
-                    <form onsubmit="event.preventDefault(); procesarFormularioEvento();" id="formEvento">
-                        <div class="grid md:grid-cols-3 gap-4 mb-4">
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Nombre Evento *</label>
-                                <input type="text" name="nombre" value="${evento?.nombre || ''}" required
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Fecha *</label>
-                                <input type="date" name="fecha" value="${evento?.fecha || ''}" required
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Ventas Brutas € *</label>
-                                <input type="number" name="ventasBrutas" step="0.01" value="${evento?.ventasBrutas || ''}" 
-                                       onchange="actualizarCalculos()" required
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                        </div>
-
-                        <div class="grid md:grid-cols-3 gap-4 mb-4">
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Promotor</label>
-                                <input type="text" name="promotor" value="${evento?.promotor || ''}"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Sala</label>
-                                <input type="text" name="sala" value="${evento?.sala || ''}"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Grupo/Artista</label>
-                                <input type="text" name="grupo" value="${evento?.grupo || ''}"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                        </div>
-
-                        <div class="grid md:grid-cols-4 gap-4 mb-4">
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% Comercial <span class="text-xs font-normal text-gray-500">(del 10% base)</span></label>
-                                <input type="number" name="comisionComercial" step="0.01" min="0" max="100" 
-                                       value="${evento?.comisionComercial || 0}" onchange="actualizarCalculos()"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% Retorno Promotor <span class="text-xs font-normal text-gray-500">(del 10% base)</span></label>
-                                <input type="number" name="retornoPromotor" step="0.01" min="0" max="100"
-                                       value="${evento?.retornoPromotor || 0}" onchange="actualizarCalculos()"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% Retorno Sala <span class="text-xs font-normal text-gray-500">(del 10% base)</span></label>
-                                <input type="number" name="retornoSala" step="0.01" min="0" max="100"
-                                       value="${evento?.retornoSala || 0}" onchange="actualizarCalculos()"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% Retorno Grupo <span class="text-xs font-normal text-gray-500">(del 10% base)</span></label>
-                                <input type="number" name="retornoGrupo" step="0.01" min="0" max="100"
-                                       value="${evento?.retornoGrupo || 0}" onchange="actualizarCalculos()"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                        </div>
-
-                        <div class="grid md:grid-cols-3 gap-4 mb-4">
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Comercial</label>
-                                <select name="nombreComercial" onchange="actualizarJefeAuto(); actualizarCalculos();" class="w-full border border-gray-300 rounded px-3 py-2">
-                                    <option value="">Sin comercial asignado</option>
-                                    ${state.comerciales.filter(c => c.tipo !== 'jefe').map(com => `<option value="${esc(com.nombre)}" ${evento?.nombreComercial === com.nombre ? 'selected' : ''}>${esc(com.nombre)}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Jefe Comercial <span class="text-xs font-normal text-gray-500">(automático según el comercial)</span></label>
-                                <input type="text" id="nombreJefeDisplay" value="${evento?.nombreJefe || 'Sin jefe asignado'}" disabled
-                                       class="w-full border border-gray-300 rounded px-3 py-2 bg-gray-100 text-gray-600">
-                                <input type="hidden" name="nombreJefe" value="${evento?.nombreJefe || ''}">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% Jefe Comercial <span class="text-xs font-normal text-gray-500">(del 10% base · 10 = 1% de ventas)</span></label>
-                                <input type="number" name="comisionJefe" step="0.01" min="0" max="100"
-                                       value="${evento?.comisionJefe || 0}" onchange="actualizarCalculos()"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                        </div>
-
-                        <input type="hidden" name="estado" value="${evento?.estado || 'pendiente'}">
-
-                        <div id="calculosPreview" class="mt-6 p-4 bg-blue-50 rounded-lg">
-                            <h4 class="font-bold mb-3">📊 Vista Previa Cálculos</h4>
-                            <div class="grid md:grid-cols-2 gap-4 text-sm">
-                                <div>
-                                    <div class="flex justify-between mb-1">
-                                        <span>Vivetix (${state.config.comisionVivetix}%):</span>
-                                        <span id="prevVivetix" class="font-bold">0.00€</span>
-                                    </div>
-                                    <div class="flex justify-between mb-1">
-                                        <span>EntradasYa Base (${state.config.comisionEntradasYa}%):</span>
-                                        <span id="prevBase" class="font-bold">0.00€</span>
-                                    </div>
-                                    <div class="flex justify-between mb-1">
-                                        <span>Comercial:</span>
-                                        <span id="prevComercial" class="font-bold">0.00€</span>
-                                    </div>
-                                    <div class="flex justify-between mb-1">
-                                        <span>Retorno Promotor:</span>
-                                        <span id="prevPromotor" class="font-bold">0.00€</span>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div class="flex justify-between mb-1">
-                                        <span>Retorno Sala:</span>
-                                        <span id="prevSala" class="font-bold">0.00€</span>
-                                    </div>
-                                    <div class="flex justify-between mb-1">
-                                        <span>Retorno Grupo:</span>
-                                        <span id="prevGrupo" class="font-bold">0.00€</span>
-                                    </div>
-                                    <div class="flex justify-between mb-1">
-                                        <span>Jefe Comercial:</span>
-                                        <span id="prevJefe" class="font-bold">0.00€</span>
-                                    </div>
-                                    <div class="flex justify-between pt-3 border-t-2 border-blue-200">
-                                        <span class="font-bold text-lg">NETO ENTRADASYA:</span>
-                                        <span id="prevNeto" class="font-bold text-xl text-green-600">0.00€</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mt-6 flex gap-3">
-                            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold">
-                                💾 Guardar Evento
-                            </button>
-                            <button type="button" onclick="state.eventoEditando=null; render();" 
-                                    class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-bold">
-                                ❌ Cancelar
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            `;
-        }
-
-        // Autorrellena el campo % Jefe Comercial y el nombre del jefe al elegir un comercial
-        function actualizarJefeAuto() {
-            const form = document.getElementById('formEvento');
-            if (!form) return;
-            const jefe = obtenerJefeDeComercial(form.nombreComercial.value);
-            const displayJefe = document.getElementById('nombreJefeDisplay');
-            if (jefe) {
-                form.nombreJefe.value = jefe.nombre;
-                if (displayJefe) displayJefe.value = jefe.nombre;
-                // 10 = 10% del 10% base = 1% de las ventas totales (comisión estándar de equipo)
-                form.comisionJefe.value = 10;
-            } else {
-                form.nombreJefe.value = '';
-                if (displayJefe) displayJefe.value = 'Sin jefe asignado';
-                form.comisionJefe.value = 0;
-            }
-        }
-
-        function actualizarCalculos() {
-            const form = document.getElementById('formEvento');
-            if (!form) return;
-            
-            const ventas = parseFloat(form.ventasBrutas.value) || 0;
-            const pcCom = parseFloat(form.comisionComercial.value) || 0;
-            const pcProm = parseFloat(form.retornoPromotor.value) || 0;
-            const pcSala = parseFloat(form.retornoSala.value) || 0;
-            const pcGrupo = parseFloat(form.retornoGrupo.value) || 0;
-            const pcJefe = parseFloat(form.comisionJefe.value) || 0;
-            
-            const calc = calcularEvento(ventas, pcCom, pcProm, pcSala, pcGrupo, pcJefe);
-            
-            document.getElementById('prevVivetix').textContent = calc.importeVivetix.toFixed(2) + '€';
-            document.getElementById('prevBase').textContent = calc.importeEntradasYaBase.toFixed(2) + '€';
-            document.getElementById('prevComercial').textContent = calc.importeComercial.toFixed(2) + '€';
-            document.getElementById('prevPromotor').textContent = calc.importeRetornoPromotor.toFixed(2) + '€';
-            document.getElementById('prevSala').textContent = calc.importeRetornoSala.toFixed(2) + '€';
-            document.getElementById('prevGrupo').textContent = calc.importeRetornoGrupo.toFixed(2) + '€';
-            document.getElementById('prevJefe').textContent = calc.importeJefe.toFixed(2) + '€';
-            document.getElementById('prevNeto').textContent = calc.netoEntradasYa.toFixed(2) + '€';
-        }
-
-        function procesarFormularioEvento() {
-            const form = document.getElementById('formEvento');
-            const datos = {
-                nombre: form.nombre.value,
-                fecha: form.fecha.value,
-                ventasBrutas: parseFloat(form.ventasBrutas.value),
-                promotor: form.promotor.value,
-                sala: form.sala.value,
-                grupo: form.grupo.value,
-                comisionComercial: parseFloat(form.comisionComercial.value) || 0,
-                nombreComercial: form.nombreComercial.value,
-                comisionJefe: parseFloat(form.comisionJefe.value) || 0,
-                nombreJefe: form.nombreJefe.value || '',
-                retornoPromotor: parseFloat(form.retornoPromotor.value) || 0,
-                retornoSala: parseFloat(form.retornoSala.value) || 0,
-                retornoGrupo: parseFloat(form.retornoGrupo.value) || 0,
-                estado: form.estado.value
-            };
-            
-            guardarEvento(datos);
-        }
-
-        function renderFacturacion() {
-            // Agrupar eventos por mes
-            const eventosPorMes = {};
-            state.eventos.forEach(e => {
-                const mes = e.fecha.slice(0, 7);
-                if (!eventosPorMes[mes]) eventosPorMes[mes] = [];
-                eventosPorMes[mes].push(e);
-            });
-            
-            const meses = Object.keys(eventosPorMes).sort().reverse();
-            
-            return `
-                <div class="space-y-6">
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h2 class="text-2xl font-bold">💰 Facturación Mensual</h2>
-                        <p class="text-sm text-gray-600 mt-2">Gestión de facturas mensuales a Vivetix</p>
-                    </div>
-
-                    ${meses.length === 0 ? `
-                        <div class="bg-white rounded-lg shadow p-20 text-center">
-                            <p class="text-gray-500">No hay eventos para facturar</p>
-                        </div>
-                    ` : meses.map(mes => {
-                        const eventos = eventosPorMes[mes];
-                        const realizados = eventos.filter(e => e.estado === 'realizado' || e.estado === 'facturado' || e.estado === 'cobrado');
-                        const facturados = eventos.filter(e => e.estado === 'facturado' || e.estado === 'cobrado');
-                        const cobrados = eventos.filter(e => e.estado === 'cobrado');
-                        
-                        const baseImponible = realizados.reduce((s, e) => s + e.netoEntradasYa, 0);
-                        const iva = (baseImponible * state.config.iva) / 100;
-                        const total = baseImponible + iva;
-                        
-                        return `
-                            <div class="bg-white rounded-lg shadow overflow-hidden">
-                                <div class="bg-blue-50 px-6 py-4 border-b">
-                                    <div class="flex justify-between items-center">
-                                        <h3 class="text-xl font-bold">${mes}</h3>
-                                        <div class="flex gap-2">
-                                            ${realizados.length > 0 ? `
-                                                <button onclick="exportarCSVManagerio('${mes}')" 
-                                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-semibold text-sm">
-                                                    📄 Exportar CSV Manager.io
-                                                </button>
-                                            ` : ''}
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="p-6">
-                                    <div class="grid md:grid-cols-4 gap-4 mb-6">
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <div class="text-sm text-gray-600">Total Eventos</div>
-                                            <div class="text-2xl font-bold">${eventos.length}</div>
-                                        </div>
-                                        <div class="bg-green-50 p-4 rounded-lg">
-                                            <div class="text-sm text-gray-600">Base Imponible</div>
-                                            <div class="text-2xl font-bold text-green-600">${baseImponible.toFixed(2)}€</div>
-                                        </div>
-                                        <div class="bg-blue-50 p-4 rounded-lg">
-                                            <div class="text-sm text-gray-600">IVA (${state.config.iva}%)</div>
-                                            <div class="text-2xl font-bold text-blue-600">${iva.toFixed(2)}€</div>
-                                        </div>
-                                        <div class="bg-purple-50 p-4 rounded-lg">
-                                            <div class="text-sm text-gray-600">TOTAL A COBRAR</div>
-                                            <div class="text-2xl font-bold text-purple-600">${total.toFixed(2)}€</div>
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-4">
-                                        <h4 class="font-bold mb-2">Estados:</h4>
-                                        <div class="flex gap-4 text-sm">
-                                            <span>🟡 Pendiente: ${eventos.filter(e => e.estado === 'pendiente').length}</span>
-                                            <span>🔵 Realizado: ${eventos.filter(e => e.estado === 'realizado').length}</span>
-                                            <span>🟣 Facturado: ${facturados.length}</span>
-                                            <span>🟢 Cobrado: ${cobrados.length}</span>
-                                        </div>
-                                    </div>
-
-                                    <table class="w-full text-sm">
-                                        <thead class="bg-gray-50 border-b">
-                                            <tr>
-                                                <th class="px-4 py-2 text-left">Fecha</th>
-                                                <th class="px-4 py-2 text-left">Evento</th>
-                                                <th class="px-4 py-2 text-right">Ventas</th>
-                                                <th class="px-4 py-2 text-right">Neto</th>
-                                                <th class="px-4 py-2 text-center">Estado</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y">
-                                            ${eventos.map(e => `
-                                                <tr class="hover:bg-gray-50">
-                                                    <td class="px-4 py-2">${e.fecha}</td>
-                                                    <td class="px-4 py-2 font-semibold">${e.nombre}</td>
-                                                    <td class="px-4 py-2 text-right">${e.ventasBrutas.toFixed(2)}€</td>
-                                                    <td class="px-4 py-2 text-right font-bold text-green-600">${e.netoEntradasYa.toFixed(2)}€</td>
-                                                    <td class="px-4 py-2 text-center">
-                                                        <span class="px-3 py-1 rounded text-xs font-semibold ${
-                                                            e.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                                                            e.estado === 'realizado' ? 'bg-blue-100 text-blue-800' :
-                                                            e.estado === 'facturado' ? 'bg-purple-100 text-purple-800' :
-                                                            'bg-green-100 text-green-800'
-                                                        }">
-                                                            ${e.estado === 'pendiente' ? '🟡 Pendiente' :
-                                                              e.estado === 'realizado' ? '🔵 Realizado' :
-                                                              e.estado === 'facturado' ? '🟣 Facturado' :
-                                                              '🟢 Cobrado'}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            `).join('')}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-            `;
-        }
-
-        function renderComerciales() {
-            // Calcular totales por comercial (comisión personal + comisión de equipo si es Jefe)
-            const statsComerciales = state.comerciales.map(com => {
-                const eventosComercial = state.eventos.filter(e => (e.nombreComercial||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
-                const totalComision = eventosComercial.reduce((s, e) => s + e.importeComercial, 0);
-                let totalEquipo = 0, eventosEquipo = 0, miembrosEquipo = [];
-                if (com.tipo === 'jefe') {
-                    const eventosDelEquipo = state.eventos.filter(e => (e.nombreJefe||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
-                    totalEquipo = eventosDelEquipo.reduce((s, e) => s + (e.importeJefe||0), 0);
-                    eventosEquipo = eventosDelEquipo.length;
-                    miembrosEquipo = state.comerciales.filter(c => c.jefeId === com.id);
-                }
-                return { ...com, eventos: eventosComercial, totalComision, totalEquipo, eventosEquipo, miembrosEquipo };
-            });
-            
-            return `
-                <div class="space-y-6">
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <div class="flex justify-between items-center">
-                            <div>
-                                <h2 class="text-2xl font-bold">💼 Gestión de Comerciales</h2>
-                                <p class="text-sm text-gray-600 mt-1">Control de comisiones por comercial y Jefe Comercial</p>
-                            </div>
-                            <button onclick="mostrarFormularioComercial()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold">
-                                ➕ Nuevo Comercial
-                            </button>
-                        </div>
-                    </div>
-
-                    ${state.comercialEditando !== undefined ? renderFormularioComercial() : ''}
-
-                    <div class="grid md:grid-cols-3 gap-6">
-                        ${statsComerciales.map(com => `
-                            <div class="bg-white rounded-lg shadow overflow-hidden">
-                                <div class="bg-gradient-to-r ${com.tipo === 'jefe' ? 'from-purple-600 to-purple-700' : 'from-blue-500 to-blue-600'} text-white p-4">
-                                    <h3 class="text-xl font-bold">${com.tipo === 'jefe' ? '👑 ' : ''}${com.nombre}</h3>
-                                    <p class="text-sm opacity-90">% Comisión: ${com.comisionDefecto}% ${com.tipo === 'jefe' ? '· Jefe Comercial' : (com.jefeId ? '· Equipo: ' + (state.comerciales.find(j => j.id === com.jefeId)?.nombre || '') : '')}</p>
-                                </div>
-                                <div class="p-6">
-                                    <div class="mb-4">
-                                        <div class="text-sm text-gray-600">Comisión Personal</div>
-                                        <div class="text-3xl font-bold text-green-600">${com.totalComision.toFixed(2)}€</div>
-                                    </div>
-                                    ${com.tipo === 'jefe' ? `
-                                    <div class="mb-4">
-                                        <div class="text-sm text-gray-600">Comisión de Equipo (1%)</div>
-                                        <div class="text-2xl font-bold text-purple-600">${com.totalEquipo.toFixed(2)}€</div>
-                                    </div>
-                                    <div class="mb-4">
-                                        <div class="text-sm text-gray-600">Total Jefe (personal + equipo)</div>
-                                        <div class="text-xl font-bold text-gray-800">${(com.totalComision + com.totalEquipo).toFixed(2)}€</div>
-                                    </div>
-                                    <div class="mb-4">
-                                        <div class="text-sm text-gray-600">Comerciales en su equipo</div>
-                                        <div class="text-2xl font-bold">${com.miembrosEquipo.length}</div>
-                                    </div>
-                                    ` : `
-                                    <div class="mb-4">
-                                        <div class="text-sm text-gray-600">Eventos Asignados</div>
-                                        <div class="text-2xl font-bold">${com.eventos.length}</div>
-                                    </div>
-                                    `}
-                                    <div class="flex gap-2">
-                                        <button onclick="editarComercial('${com.id}')" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded font-semibold text-sm">
-                                            ✏️ Editar
-                                        </button>
-                                        <button onclick="verDetalleComercial('${com.id}')" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded font-semibold text-sm">
-                                            👁️ Ver
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-
-                    ${statsComerciales.length === 0 ? `
-                        <div class="bg-white rounded-lg shadow p-20 text-center">
-                            <p class="text-gray-500">No hay comerciales registrados</p>
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        }
-
-        function mostrarFormularioComercial() {
-            state.comercialEditando = '';
-            render();
-        }
-
-        function editarComercial(id) {
-            state.comercialEditando = id;
-            render();
-        }
-
-        function verDetalleComercial(id) {
-            const com = state.comerciales.find(c => c.id === id);
-            if (!com) return;
-            
-            const eventos = state.eventos.filter(e => (e.nombreComercial||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
-            const total = eventos.reduce((s, e) => s + e.importeComercial, 0);
-            
-            const detalleEventos = eventos.map(e => 
-                `${e.fecha} - ${e.nombre}: ${e.importeComercial.toFixed(2)}€`
-            ).join('\n');
-
-            let bloqueEquipo = '';
-            if (com.tipo === 'jefe') {
-                const eventosEquipo = state.eventos.filter(e => (e.nombreJefe||'').trim().toLowerCase() === (com.nombre||'').trim().toLowerCase());
-                const totalEquipo = eventosEquipo.reduce((s, e) => s + (e.importeJefe||0), 0);
-                const miembros = state.comerciales.filter(c => c.jefeId === com.id).map(c => c.nombre).join(', ') || 'Sin comerciales asignados';
-                bloqueEquipo = `
-
-👑 COMO JEFE COMERCIAL:
-Equipo: ${miembros}
-Eventos del equipo: ${eventosEquipo.length}
-Comisión de equipo (1%): ${totalEquipo.toFixed(2)}€
-TOTAL (personal + equipo): ${(total + totalEquipo).toFixed(2)}€`;
-            }
-            
-            alert(`💼 DETALLE COMERCIAL
-
-Nombre: ${com.nombre}
-Rango: ${com.tipo === 'jefe' ? 'Jefe Comercial' : 'Comercial Normal'}
-Comisión por defecto: ${com.comisionDefecto}%
-Estado: ${com.activo ? 'Activo' : 'Inactivo'}
-
-📊 ESTADÍSTICAS PERSONALES:
-Eventos asignados: ${eventos.length}
-Total comisiones: ${total.toFixed(2)}€
-${bloqueEquipo}
-
-📋 EVENTOS:
-${detalleEventos || 'Sin eventos asignados'}`);
-        }
-
-        function renderFormularioComercial() {
-            const comercial = state.comercialEditando && state.comercialEditando !== '' ?
-                state.comerciales.find(c => c.id === state.comercialEditando) : null;
-            
-            return `
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h3 class="text-xl font-bold mb-4">${comercial ? '✏️ Editar Comercial' : '➕ Nuevo Comercial'}</h3>
-                    <form onsubmit="event.preventDefault(); guardarComercial();" id="formComercial">
-                        <div class="grid md:grid-cols-3 gap-4 mb-4">
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Nombre *</label>
-                                <input type="text" name="nombre" value="${comercial?.nombre || ''}" required
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% Comisión por Defecto *</label>
-                                <input type="number" name="comisionDefecto" step="0.01" min="0" max="100" 
-                                       value="${comercial?.comisionDefecto || 3}" required
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Estado</label>
-                                <select name="activo" class="w-full border border-gray-300 rounded px-3 py-2">
-                                    <option value="true" ${comercial?.activo !== false ? 'selected' : ''}>Activo</option>
-                                    <option value="false" ${comercial?.activo === false ? 'selected' : ''}>Inactivo</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="grid md:grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Rango</label>
-                                <select name="tipo" class="w-full border border-gray-300 rounded px-3 py-2">
-                                    <option value="comercial" ${comercial?.tipo !== 'jefe' ? 'selected' : ''}>Comercial Normal</option>
-                                    <option value="jefe" ${comercial?.tipo === 'jefe' ? 'selected' : ''}>Jefe Comercial</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">Depende de Jefe Comercial <span class="text-xs font-normal text-gray-500">(si aplica)</span></label>
-                                <select name="jefeId" class="w-full border border-gray-300 rounded px-3 py-2">
-                                    <option value="">Sin jefe asignado</option>
-                                    ${state.comerciales.filter(c => c.tipo === 'jefe' && c.id !== comercial?.id).map(j => `<option value="${j.id}" ${comercial?.jefeId === j.id ? 'selected' : ''}>${esc(j.nombre)}</option>`).join('')}
-                                </select>
-                            </div>
-                        </div>
-                        <div class="flex gap-3">
-                            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold">
-                                💾 Guardar
-                            </button>
-                            <button type="button" onclick="state.comercialEditando=undefined; render();" 
-                                    class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-bold">
-                                ❌ Cancelar
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            `;
-        }
-
-        function guardarComercial() {
-            const form = document.getElementById('formComercial');
-            const datos = {
-                id: state.comercialEditando && state.comercialEditando !== '' ? state.comercialEditando : 'com' + Date.now(),
-                nombre: form.nombre.value,
-                comisionDefecto: parseFloat(form.comisionDefecto.value),
-                activo: form.activo.value === 'true',
-                tipo: form.tipo.value === 'jefe' ? 'jefe' : 'comercial',
-                jefeId: form.tipo.value === 'jefe' ? '' : (form.jefeId.value || '')
-            };
-            
-            if (state.comercialEditando && state.comercialEditando !== '') {
-                const idx = state.comerciales.findIndex(c => c.id === state.comercialEditando);
-                state.comerciales[idx] = datos;
-            } else {
-                state.comerciales.push(datos);
-            }
-            
-            state.comercialEditando = undefined;
-            guardarState(); // ← GUARDAR
-            alert('✅ Comercial guardado');
-            render();
-        }
-
-        function renderPromotores() {
-            const tabActual = state.tabPromotores || 'promotores';
-            
-            return `
-                <div class="space-y-6">
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h2 class="text-2xl font-bold mb-4">🏢 Promotores, Salas y Grupos</h2>
-                        <div class="flex gap-2 border-b">
-                            <button onclick="state.tabPromotores='promotores'; render();" 
-                                    class="px-6 py-3 font-semibold ${tabActual === 'promotores' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}">
-                                Promotores
-                            </button>
-                            <button onclick="state.tabPromotores='salas'; render();" 
-                                    class="px-6 py-3 font-semibold ${tabActual === 'salas' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}">
-                                Salas
-                            </button>
-                            <button onclick="state.tabPromotores='grupos'; render();" 
-                                    class="px-6 py-3 font-semibold ${tabActual === 'grupos' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}">
-                                Grupos
-                            </button>
-                        </div>
-                    </div>
-
-                    ${tabActual === 'promotores' ? renderListaPromotores() : ''}
-                    ${tabActual === 'salas' ? renderListaSalas() : ''}
-                    ${tabActual === 'grupos' ? renderListaGrupos() : ''}
-                </div>
-            `;
-        }
-
-        function renderListaPromotores() {
-            const statsPromotores = state.promotores.map(prom => {
-                const eventos = state.eventos.filter(e => e.promotor === prom.nombre);
-                const totalRetornos = eventos.reduce((s, e) => s + e.importeRetornoPromotor, 0);
-                const totalVentas = eventos.reduce((s, e) => s + e.ventasBrutas, 0);
-                return { ...prom, eventos, totalRetornos, totalVentas };
-            });
-            
-            return `
-                <div class="bg-white rounded-lg shadow p-6">
-                    <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-xl font-bold">Lista de Promotores</h3>
-                        <button onclick="nuevoPromotor()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-semibold">
-                            ➕ Nuevo Promotor
-                        </button>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-50 border-b-2">
-                                <tr>
-                                    <th class="px-4 py-3 text-left font-semibold">Nombre</th>
-                                    <th class="px-4 py-3 text-center font-semibold">% Retorno</th>
-                                    <th class="px-4 py-3 text-center font-semibold">Eventos</th>
-                                    <th class="px-4 py-3 text-right font-semibold">Total Ventas</th>
-                                    <th class="px-4 py-3 text-right font-semibold">Total Retornos</th>
-                                    <th class="px-4 py-3 text-center font-semibold">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y">
-                                ${statsPromotores.map(p => `
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-4 py-3 font-semibold">${p.nombre}</td>
-                                        <td class="px-4 py-3 text-center">${p.retornoDefecto}%</td>
-                                        <td class="px-4 py-3 text-center">${p.eventos.length}</td>
-                                        <td class="px-4 py-3 text-right">${p.totalVentas.toFixed(2)}€</td>
-                                        <td class="px-4 py-3 text-right font-bold text-orange-600">${p.totalRetornos.toFixed(2)}€</td>
-                                        <td class="px-4 py-3 text-center">
-                                            <button onclick="editarPromotor('${p.id}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs">
-                                                ✏️ Editar
-                                            </button>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderListaSalas() {
-            const statsSalas = state.salas.map(sala => {
-                const eventos = state.eventos.filter(e => e.sala === sala.nombre);
-                const totalRetornos = eventos.reduce((s, e) => s + e.importeRetornoSala, 0);
-                const totalVentas = eventos.reduce((s, e) => s + e.ventasBrutas, 0);
-                return { ...sala, eventos, totalRetornos, totalVentas };
-            });
-            
-            return `
-                <div class="bg-white rounded-lg shadow p-6">
-                    <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-xl font-bold">Lista de Salas</h3>
-                        <button onclick="nuevaSala()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-semibold">
-                            ➕ Nueva Sala
-                        </button>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-50 border-b-2">
-                                <tr>
-                                    <th class="px-4 py-3 text-left font-semibold">Nombre</th>
-                                    <th class="px-4 py-3 text-center font-semibold">% Retorno</th>
-                                    <th class="px-4 py-3 text-center font-semibold">Eventos</th>
-                                    <th class="px-4 py-3 text-right font-semibold">Total Ventas</th>
-                                    <th class="px-4 py-3 text-right font-semibold">Total Retornos</th>
-                                    <th class="px-4 py-3 text-center font-semibold">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y">
-                                ${statsSalas.map(s => `
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-4 py-3 font-semibold">${s.nombre}</td>
-                                        <td class="px-4 py-3 text-center">${s.retornoDefecto}%</td>
-                                        <td class="px-4 py-3 text-center">${s.eventos.length}</td>
-                                        <td class="px-4 py-3 text-right">${s.totalVentas.toFixed(2)}€</td>
-                                        <td class="px-4 py-3 text-right font-bold text-orange-600">${s.totalRetornos.toFixed(2)}€</td>
-                                        <td class="px-4 py-3 text-center">
-                                            <button onclick="editarSala('${s.id}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs">
-                                                ✏️ Editar
-                                            </button>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderListaGrupos() {
-            const statsGrupos = state.grupos.map(grupo => {
-                const eventos = state.eventos.filter(e => e.grupo === grupo.nombre);
-                const totalRetornos = eventos.reduce((s, e) => s + e.importeRetornoGrupo, 0);
-                const totalVentas = eventos.reduce((s, e) => s + e.ventasBrutas, 0);
-                return { ...grupo, eventos, totalRetornos, totalVentas };
-            });
-            
-            return `
-                <div class="bg-white rounded-lg shadow p-6">
-                    <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-xl font-bold">Lista de Grupos/Artistas</h3>
-                        <button onclick="nuevoGrupo()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-semibold">
-                            ➕ Nuevo Grupo
-                        </button>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-50 border-b-2">
-                                <tr>
-                                    <th class="px-4 py-3 text-left font-semibold">Nombre</th>
-                                    <th class="px-4 py-3 text-center font-semibold">Eventos</th>
-                                    <th class="px-4 py-3 text-right font-semibold">Total Ventas</th>
-                                    <th class="px-4 py-3 text-right font-semibold">Total Retornos</th>
-                                    <th class="px-4 py-3 text-center font-semibold">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y">
-                                ${statsGrupos.map(g => `
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-4 py-3 font-semibold">${g.nombre}</td>
-                                        <td class="px-4 py-3 text-center">${g.eventos.length}</td>
-                                        <td class="px-4 py-3 text-right">${g.totalVentas.toFixed(2)}€</td>
-                                        <td class="px-4 py-3 text-right font-bold text-orange-600">${g.totalRetornos.toFixed(2)}€</td>
-                                        <td class="px-4 py-3 text-center">
-                                            <button onclick="editarGrupo('${g.id}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs">
-                                                ✏️ Editar
-                                            </button>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-        }
-
-        function nuevoPromotor() {
-            const nombre = prompt('Nombre del promotor:');
-            if (!nombre) return;
-            const retorno = parseFloat(prompt('% Retorno por defecto:', '10'));
-            state.promotores.push({ id: 'prom' + Date.now(), nombre, retornoDefecto: retorno || 0 });
-            guardarState(); // ← GUARDAR
-            alert('✅ Promotor añadido');
-            render();
-        }
-
-        function editarPromotor(id) {
-            const prom = state.promotores.find(p => p.id === id);
-            if (!prom) return;
-            const nombre = prompt('Nombre:', prom.nombre);
-            if (!nombre) return;
-            const retorno = parseFloat(prompt('% Retorno por defecto:', prom.retornoDefecto));
-            prom.nombre = nombre;
-            prom.retornoDefecto = retorno;
-            guardarState(); // ← GUARDAR
-            alert('✅ Promotor actualizado');
-            render();
-        }
-
-        function nuevaSala() {
-            const nombre = prompt('Nombre de la sala:');
-            if (!nombre) return;
-            const retorno = parseFloat(prompt('% Retorno por defecto:', '5'));
-            state.salas.push({ id: 'sala' + Date.now(), nombre, retornoDefecto: retorno || 0 });
-            guardarState(); // ← GUARDAR
-            alert('✅ Sala añadida');
-            render();
-        }
-
-        function editarSala(id) {
-            const sala = state.salas.find(s => s.id === id);
-            if (!sala) return;
-            const nombre = prompt('Nombre:', sala.nombre);
-            if (!nombre) return;
-            const retorno = parseFloat(prompt('% Retorno por defecto:', sala.retornoDefecto));
-            sala.nombre = nombre;
-            sala.retornoDefecto = retorno;
-            guardarState(); // ← GUARDAR
-            alert('✅ Sala actualizada');
-            render();
-        }
-
-        function nuevoGrupo() {
-            const nombre = prompt('Nombre del grupo/artista:');
-            if (!nombre) return;
-            state.grupos.push({ id: 'grupo' + Date.now(), nombre });
-            guardarState(); // ← GUARDAR
-            alert('✅ Grupo añadido');
-            render();
-        }
-
-        function editarGrupo(id) {
-            const grupo = state.grupos.find(g => g.id === id);
-            if (!grupo) return;
-            const nombre = prompt('Nombre:', grupo.nombre);
-            if (!nombre) return;
-            grupo.nombre = nombre;
-            guardarState(); // ← GUARDAR
-            alert('✅ Grupo actualizado');
-            render();
-        }
-
-        function renderReportes() {
-            const totalEventos = state.eventos.length;
-            const totalVentas = state.eventos.reduce((s, e) => s + e.ventasBrutas, 0);
-            const totalNeto = state.eventos.reduce((s, e) => s + e.netoEntradasYa, 0);
-            const totalVivetix = state.eventos.reduce((s, e) => s + e.importeVivetix, 0);
-            const totalComerciales = state.eventos.reduce((s, e) => s + e.importeComercial, 0);
-            const totalRetornos = state.eventos.reduce((s, e) => s + e.importeRetornoPromotor + e.importeRetornoSala + e.importeRetornoGrupo, 0);
-            
-            // Por estado
-            const porEstado = {
-                pendiente: state.eventos.filter(e => e.estado === 'pendiente').length,
-                realizado: state.eventos.filter(e => e.estado === 'realizado').length,
-                facturado: state.eventos.filter(e => e.estado === 'facturado').length,
-                cobrado: state.eventos.filter(e => e.estado === 'cobrado').length
-            };
-            
-            // Top promotores
-            const ventasPorPromotor = {};
-            state.eventos.forEach(e => {
-                if (!ventasPorPromotor[e.promotor]) ventasPorPromotor[e.promotor] = 0;
-                ventasPorPromotor[e.promotor] += e.ventasBrutas;
-            });
-            const topPromotores = Object.entries(ventasPorPromotor)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 5);
-            
-            // Top salas
-            const ventasPorSala = {};
-            state.eventos.forEach(e => {
-                if (!ventasPorSala[e.sala]) ventasPorSala[e.sala] = 0;
-                ventasPorSala[e.sala] += e.ventasBrutas;
-            });
-            const topSalas = Object.entries(ventasPorSala)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 5);
-            
-            // Por mes
-            const ventasPorMes = {};
-            state.eventos.forEach(e => {
-                const mes = e.fecha.slice(0, 7);
-                if (!ventasPorMes[mes]) ventasPorMes[mes] = { ventas: 0, neto: 0, eventos: 0 };
-                ventasPorMes[mes].ventas += e.ventasBrutas;
-                ventasPorMes[mes].neto += e.netoEntradasYa;
-                ventasPorMes[mes].eventos++;
-            });
-            const meses = Object.keys(ventasPorMes).sort();
-            
-            return `
-                <div class="space-y-6">
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <div class="flex justify-between items-center mb-2">
-                            <div>
-                                <h2 class="text-2xl font-bold">📊 Reportes y Análisis</h2>
-                                <p class="text-sm text-gray-600 mt-1">Visión completa del negocio</p>
-                            </div>
-                            <button onclick="exportarExcelCompleto()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold">
-                                📊 Exportar Excel Completo
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- KPIs Principales -->
-                    <div class="grid md:grid-cols-4 gap-6">
-                        <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg shadow-lg p-6">
-                            <div class="text-sm opacity-90 mb-1">Total Eventos</div>
-                            <div class="text-4xl font-bold">${totalEventos}</div>
-                        </div>
-                        <div class="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-lg shadow-lg p-6">
-                            <div class="text-sm opacity-90 mb-1">Ventas Totales</div>
-                            <div class="text-4xl font-bold">${(totalVentas/1000).toFixed(1)}k€</div>
-                            <div class="text-xs opacity-80 mt-1">${totalVentas.toFixed(2)}€</div>
-                        </div>
-                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-lg shadow-lg p-6">
-                            <div class="text-sm opacity-90 mb-1">Neto EntradasYa</div>
-                            <div class="text-4xl font-bold">${(totalNeto/1000).toFixed(1)}k€</div>
-                            <div class="text-xs opacity-80 mt-1">${totalNeto.toFixed(2)}€</div>
-                        </div>
-                        <div class="bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-lg shadow-lg p-6">
-                            <div class="text-sm opacity-90 mb-1">Promedio/Evento</div>
-                            <div class="text-4xl font-bold">${totalEventos > 0 ? (totalNeto/totalEventos).toFixed(0) : 0}€</div>
-                        </div>
-                    </div>
-
-                    <!-- Desglose Comisiones -->
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h3 class="text-xl font-bold mb-4">💰 Desglose de Comisiones</h3>
-                        <div class="grid md:grid-cols-4 gap-4">
-                            <div class="bg-gray-50 p-4 rounded-lg">
-                                <div class="text-sm text-gray-600 mb-1">Vivetix (${state.config.comisionVivetix}%)</div>
-                                <div class="text-2xl font-bold text-red-600">${totalVivetix.toFixed(2)}€</div>
-                            </div>
-                            <div class="bg-gray-50 p-4 rounded-lg">
-                                <div class="text-sm text-gray-600 mb-1">Comerciales</div>
-                                <div class="text-2xl font-bold text-blue-600">${totalComerciales.toFixed(2)}€</div>
-                            </div>
-                            <div class="bg-gray-50 p-4 rounded-lg">
-                                <div class="text-sm text-gray-600 mb-1">Retornos</div>
-                                <div class="text-2xl font-bold text-orange-600">${totalRetornos.toFixed(2)}€</div>
-                            </div>
-                            <div class="bg-green-50 p-4 rounded-lg">
-                                <div class="text-sm text-gray-600 mb-1">NETO EntradasYa</div>
-                                <div class="text-2xl font-bold text-green-600">${totalNeto.toFixed(2)}€</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Estados -->
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h3 class="text-xl font-bold mb-4">📋 Eventos por Estado</h3>
-                        <div class="grid md:grid-cols-4 gap-4">
-                            <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
-                                <div class="text-sm text-gray-600 mb-1">🟡 Pendientes</div>
-                                <div class="text-3xl font-bold text-yellow-600">${porEstado.pendiente}</div>
-                            </div>
-                            <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-                                <div class="text-sm text-gray-600 mb-1">🔵 Realizados</div>
-                                <div class="text-3xl font-bold text-blue-600">${porEstado.realizado}</div>
-                            </div>
-                            <div class="bg-purple-50 border border-purple-200 p-4 rounded-lg">
-                                <div class="text-sm text-gray-600 mb-1">🟣 Facturados</div>
-                                <div class="text-3xl font-bold text-purple-600">${porEstado.facturado}</div>
-                            </div>
-                            <div class="bg-green-50 border border-green-200 p-4 rounded-lg">
-                                <div class="text-sm text-gray-600 mb-1">🟢 Cobrados</div>
-                                <div class="text-3xl font-bold text-green-600">${porEstado.cobrado}</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Rankings -->
-                    <div class="grid md:grid-cols-2 gap-6">
-                        <div class="bg-white rounded-lg shadow p-6">
-                            <h3 class="text-xl font-bold mb-4">🏆 Top Promotores</h3>
-                            ${topPromotores.length === 0 ? 
-                                '<p class="text-gray-500 text-center py-10">No hay datos</p>' :
-                                `<div class="space-y-3">
-                                    ${topPromotores.map((p, idx) => `
-                                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded">
-                                            <div class="flex items-center gap-3">
-                                                <div class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
-                                                    ${idx + 1}
-                                                </div>
-                                                <div class="font-semibold">${p[0]}</div>
-                                            </div>
-                                            <div class="text-right">
-                                                <div class="font-bold text-green-600">${p[1].toFixed(2)}€</div>
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                </div>`
-                            }
-                        </div>
-
-                        <div class="bg-white rounded-lg shadow p-6">
-                            <h3 class="text-xl font-bold mb-4">🏆 Top Salas</h3>
-                            ${topSalas.length === 0 ? 
-                                '<p class="text-gray-500 text-center py-10">No hay datos</p>' :
-                                `<div class="space-y-3">
-                                    ${topSalas.map((s, idx) => `
-                                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded">
-                                            <div class="flex items-center gap-3">
-                                                <div class="w-8 h-8 rounded-full bg-purple-500 text-white flex items-center justify-center font-bold">
-                                                    ${idx + 1}
-                                                </div>
-                                                <div class="font-semibold">${s[0]}</div>
-                                            </div>
-                                            <div class="text-right">
-                                                <div class="font-bold text-green-600">${s[1].toFixed(2)}€</div>
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                </div>`
-                            }
-                        </div>
-                    </div>
-
-                    <!-- Evolución Mensual -->
-                    ${meses.length > 0 ? `
-                        <div class="bg-white rounded-lg shadow p-6">
-                            <h3 class="text-xl font-bold mb-4">📈 Evolución Mensual</h3>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-sm">
-                                    <thead class="bg-gray-50 border-b-2">
-                                        <tr>
-                                            <th class="px-4 py-3 text-left font-semibold">Mes</th>
-                                            <th class="px-4 py-3 text-center font-semibold">Eventos</th>
-                                            <th class="px-4 py-3 text-right font-semibold">Ventas</th>
-                                            <th class="px-4 py-3 text-right font-semibold">Neto EntradasYa</th>
-                                            <th class="px-4 py-3 text-right font-semibold">Promedio/Evento</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y">
-                                        ${meses.map(mes => {
-                                            const data = ventasPorMes[mes];
-                                            return `
-                                                <tr class="hover:bg-gray-50">
-                                                    <td class="px-4 py-3 font-semibold">${mes}</td>
-                                                    <td class="px-4 py-3 text-center">${data.eventos}</td>
-                                                    <td class="px-4 py-3 text-right">${data.ventas.toFixed(2)}€</td>
-                                                    <td class="px-4 py-3 text-right font-bold text-green-600">${data.neto.toFixed(2)}€</td>
-                                                    <td class="px-4 py-3 text-right">${(data.neto / data.eventos).toFixed(2)}€</td>
-                                                </tr>
-                                            `;
-                                        }).join('')}
-                                        <tr class="bg-gray-50 font-bold">
-                                            <td class="px-4 py-3">TOTAL</td>
-                                            <td class="px-4 py-3 text-center">${totalEventos}</td>
-                                            <td class="px-4 py-3 text-right">${totalVentas.toFixed(2)}€</td>
-                                            <td class="px-4 py-3 text-right text-green-600">${totalNeto.toFixed(2)}€</td>
-                                            <td class="px-4 py-3 text-right">${totalEventos > 0 ? (totalNeto/totalEventos).toFixed(2) : 0}€</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        }
-
-        function renderConfig() {
-            return `
-                <div class="space-y-6">
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h2 class="text-2xl font-bold mb-4">⚙️ Configuración</h2>
-                    </div>
-
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <h3 class="text-xl font-bold mb-4">Comisiones Base</h3>
-                        <div class="grid md:grid-cols-3 gap-4">
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% Vivetix</label>
-                                <input type="number" step="0.01" value="${state.config.comisionVivetix}"
-                                       onchange="state.config.comisionVivetix = parseFloat(this.value); guardarState(); render();"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% EntradasYa <span class="text-xs font-normal text-gray-500">(base de Comercial/Promotor/Sala/Grupo)</span></label>
-                                <input type="number" step="0.01" value="${state.config.comisionEntradasYa}"
-                                       onchange="state.config.comisionEntradasYa = parseFloat(this.value); guardarState(); render();"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1">% IVA</label>
-                                <input type="number" step="1" value="${state.config.iva}"
-                                       onchange="state.config.iva = parseFloat(this.value); guardarState(); render();"
-                                       class="w-full border border-gray-300 rounded px-3 py-2">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-green-50 border border-green-200 rounded-lg p-6">
-                        <h4 class="font-bold text-green-700 mb-3">💾 Backup de Datos</h4>
-                        <div class="flex gap-3 mb-3">
-                            <button onclick="descargarBackup()" 
-                                    class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold flex-1">
-                                ⬇️ Descargar Backup
-                            </button>
-                            <button onclick="document.getElementById('fileRestore').click()" 
-                                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold flex-1">
-                                ⬆️ Restaurar Backup
-                            </button>
-                        </div>
-                        <input type="file" id="fileRestore" accept=".json" onchange="restaurarBackup(event)" class="hidden">
-                        <p class="text-xs text-gray-600">Descarga tus datos regularmente para no perderlos si borras caché.</p>
-                    </div>
-
-                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                        <h4 class="font-bold mb-2">ℹ️ Información</h4>
-                        <p class="text-sm mb-2">Sistema EntradasYa v2.0 - Gestión con sincronización en la nube</p>
-                        <p class="text-xs text-gray-600">✅ Los datos se guardan automáticamente en Firebase. Accede desde cualquier dispositivo.</p>
-                    </div>
-
-                    <div class="bg-red-50 border border-red-200 rounded-lg p-6">
-                        <h4 class="font-bold text-red-700 mb-2">⚠️ Zona Peligrosa</h4>
-                        <button onclick="if(confirm('⚠️ ¿BORRAR TODOS LOS DATOS? Esta acción NO se puede deshacer.')) { Storage.clear(); location.reload(); }" 
-                                class="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-bold">
-                            🗑️ Borrar Todos los Datos
-                        </button>
-                        <p class="text-xs text-gray-600 mt-2">Esto eliminará todos los eventos, comerciales, promotores y configuración.</p>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Backup y restauración
-        function descargarBackup() {
-            const backup = {
-                fecha: new Date().toISOString(),
-                version: '1.0',
-                eventos: state.eventos,
-                comerciales: state.comerciales,
-                promotores: state.promotores,
-                salas: state.salas,
-                grupos: state.grupos,
-                config: state.config
-            };
-            
-            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `entradasya_backup_${new Date().toISOString().slice(0,10)}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function restaurarBackup(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const backup = JSON.parse(e.target.result);
-                    
-                    if (!confirm('⚠️ ¿Restaurar backup? Esto REEMPLAZARÁ todos los datos actuales.')) {
-                        return;
-                    }
-                    
-                    state.eventos = backup.eventos || [];
-                    state.comerciales = backup.comerciales || [];
-                    state.promotores = backup.promotores || [];
-                    state.salas = backup.salas || [];
-                    state.grupos = backup.grupos || [];
-                    state.config = backup.config || state.config;
-                    
-                    guardarState();
-                    alert('✅ Backup restaurado correctamente');
-                    render();
-                } catch (error) {
-                    alert('❌ Error al restaurar backup: ' + error.message);
-                }
-            };
-            reader.readAsText(file);
-        }
-
-        // Inicializar - Esperar a que Firebase esté listo
-        function esperarFirebase(intentos) {
-            if (intentos <= 0) {
-                console.error('Firebase no cargó a tiempo');
-                cargarDatosIniciales();
-                return;
-            }
-            if (window.firebaseDoc && window.firebaseDB) {
-                cargarDatosIniciales();
-            } else {
-                setTimeout(() => esperarFirebase(intentos - 1), 100);
-            }
-        }
-        esperarFirebase(50);
-    </script>
+<body>
+<div id="app" class="min-h-screen"></div>
+
+<script>
+/* ===================== ESTADO GLOBAL ===================== */
+const S = {
+  fbApp:null, db:null, fb:null,
+  config: JSON.parse(localStorage.getItem('ey_fb_config')||'null'),
+  session: JSON.parse(localStorage.getItem('ey_session')||'null'),
+  comerciales:[], clientes:[], eventos:[], contactos:[], comisiones:[],
+  listenersOn:false,
+  ui:{ view:'dashboard', clienteFiltro:{q:'',comercial:'',estado:'',tipo:'',prioridad:''}, clienteDetalleId:null, clienteDetalleTab:'potencial', importStep:0, importRows:[], importDupes:[] }
+};
+const PCT = 0.04;
+const money = n => (isFinite(n)?n:0).toLocaleString('es-ES',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const numf = n => (isFinite(n)?n:0).toLocaleString('es-ES');
+const fdate = d => { if(!d) return '-'; const dt = (d instanceof Date)? d : new Date(d); if(isNaN(dt)) return '-'; return dt.toLocaleDateString('es-ES'); };
+const todayISO = () => new Date().toISOString().slice(0,10);
+const uid = () => Math.random().toString(36).slice(2,10);
+
+const ESTADOS = ["Nuevo","Contactado","Interesado","Seguimiento","Negociación","Primer evento","Cliente activo","Cliente recurrente","Perdido"];
+const TIPOS = ["Sala","Discoteca","Promotor","Productora","Festival","Asociación","Teatro","Organizador","Artista / manager","Otro"];
+const TIPOS_CONTACTO = ["Llamada","WhatsApp","Email","Instagram","Reunión","Videollamada","Otro"];
+const RESULTADOS = ["No contesta","Contactado","Interesado","Quiere información","Quiere reunión","Quiere probar EntradasYa.es","Negociación","Cliente conseguido","No interesado"];
+
+function calcPotencial(c){
+  const eventosAnio = Number(c.eventosAnio)||0;
+  const mediaEntradas = Number(c.mediaEntradas)||0;
+  const precioMedio = Number(c.precioMedio)||0;
+  const entradasAnuales = eventosAnio*mediaEntradas;
+  const ventasAnuales = entradasAnuales*precioMedio;
+  const retornoAnual = ventasAnuales*PCT;
+  const retornoMensual = retornoAnual/12;
+  return {entradasAnuales, ventasAnuales, retornoAnual, retornoMensual, prioridad:prioridadDe(retornoAnual)};
+}
+function prioridadDe(retornoAnual){
+  if(retornoAnual>10000) return 'ESTRATÉGICO';
+  if(retornoAnual>=5000) return 'ALTO';
+  if(retornoAnual>=2000) return 'MEDIO';
+  return 'BAJO';
+}
+function prioridadColor(p){
+  return {BAJO:'background:#2a2f22;color:#a9c15a', MEDIO:'background:#2a2c1e;color:#e0c23e', ALTO:'background:#2c2418;color:#e0a53e', 'ESTRATÉGICO':'background:#26332c;color:#3ecf8e'}[p]||'';
+}
+function estadoColor(e){
+  const map = {Nuevo:'#4d8ff0', Contactado:'#4d8ff0', Interesado:'#e0c23e', Seguimiento:'#e0a53e', Negociación:'#e0a53e', 'Primer evento':'#3ecf8e', 'Cliente activo':'#3ecf8e', 'Cliente recurrente':'#3ecf8e', Perdido:'#e0603e'};
+  return map[e]||'#8fa1b0';
+}
+
+/* ===================== FIREBASE ===================== */
+function connectFirebase(cfg){
+  S.fb = window.__fb;
+  S.fbApp = S.fb.initializeApp(cfg);
+  S.db = S.fb.getFirestore(S.fbApp);
+  S.config = cfg;
+  localStorage.setItem('ey_fb_config', JSON.stringify(cfg));
+}
+function col(name){ return S.fb.collection(S.db, name); }
+
+function startListeners(){
+  if(S.listenersOn) return;
+  S.listenersOn = true;
+  S.fb.onSnapshot(col('crm2_comerciales'), snap=>{ S.comerciales = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_clientes'), snap=>{ S.clientes = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_eventos'), snap=>{ S.eventos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_contactos'), snap=>{ S.contactos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_comisiones'), snap=>{ S.comisiones = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+}
+
+async function ensureAdminBootstrap(){
+  const snap = await S.fb.getDocs(col('crm2_users'));
+  return snap.size===0;
+}
+
+/* ===================== RENDER RAÍZ ===================== */
+function render(){
+  const root = document.getElementById('app');
+  if(!S.config){ root.innerHTML = viewSetup(); return; }
+  if(!S.db){ connectFirebase(S.config); }
+  if(!S.session){ root.innerHTML = viewCheckingOrLogin(); if(!S._checked){ checkBootstrap(); } return; }
+  startListeners();
+  root.innerHTML = viewApp();
+}
+let bootstrapNeeded = null;
+async function checkBootstrap(){
+  S._checked = true;
+  bootstrapNeeded = await ensureAdminBootstrap();
+  render2();
+}
+function render2(){ document.getElementById('app').innerHTML = viewCheckingOrLogin(); }
+
+/* ===================== VISTA: SETUP FIREBASE ===================== */
+function viewSetup(){
+  return `
+  <div class="min-h-screen flex items-center justify-center p-6">
+    <div class="panel p-8 w-full max-w-lg">
+      <h1 class="text-xl font-bold mb-1">EntradasYa CRM</h1>
+      <p class="text-sm mb-5" style="color:var(--ink-dim)">Conecta tu base de datos gratuita (Firebase Firestore). Crea un proyecto gratis en console.firebase.google.com, activa Firestore, copia el objeto de configuración web y pégalo aquí.</p>
+      <label>Configuración Firebase (objeto JSON)</label>
+      <textarea id="cfgInput" rows="8" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'></textarea>
+      <div id="cfgErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-4" onclick="submitConfig()">Guardar y conectar</button>
+    </div>
+  </div>`;
+}
+window.submitConfig = function(){
+  const txt = document.getElementById('cfgInput').value.trim();
+  try{
+    const cfg = JSON.parse(txt);
+    if(!cfg.projectId || !cfg.apiKey) throw new Error('faltan campos');
+    connectFirebase(cfg);
+    render();
+  }catch(e){ document.getElementById('cfgErr').textContent = 'JSON no válido. Revisa que hayas copiado el objeto completo.'; }
+}
+
+/* ===================== VISTA: LOGIN / BOOTSTRAP ===================== */
+function viewCheckingOrLogin(){
+  if(bootstrapNeeded===null){
+    return `<div class="min-h-screen flex items-center justify-center"><p style="color:var(--ink-dim)">Conectando...</p></div>`;
+  }
+  if(bootstrapNeeded){
+    return `
+    <div class="min-h-screen flex items-center justify-center p-6">
+      <div class="panel p-8 w-full max-w-md">
+        <h1 class="text-xl font-bold mb-1">Crear administrador</h1>
+        <p class="text-sm mb-5" style="color:var(--ink-dim)">No hay usuarios todavía. Crea la cuenta de administrador principal.</p>
+        <div class="space-y-3">
+          <div><label>Nombre</label><input id="bNombre"></div>
+          <div><label>Email</label><input id="bEmail" type="email"></div>
+          <div><label>Contraseña</label><input id="bPass" type="password"></div>
+        </div>
+        <div id="bErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+        <button class="btn btn-accent w-full mt-4" onclick="createAdmin()">Crear administrador</button>
+      </div>
+    </div>`;
+  }
+  return `
+  <div class="min-h-screen flex items-center justify-center p-6">
+    <div class="panel p-8 w-full max-w-md">
+      <h1 class="text-xl font-bold mb-1">EntradasYa CRM</h1>
+      <p class="text-sm mb-5" style="color:var(--ink-dim)">Inicia sesión para continuar.</p>
+      <div class="space-y-3">
+        <div><label>Email</label><input id="lEmail" type="email"></div>
+        <div><label>Contraseña</label><input id="lPass" type="password"></div>
+      </div>
+      <div id="lErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-4" onclick="doLogin()">Entrar</button>
+    </div>
+  </div>`;
+}
+window.createAdmin = async function(){
+  const nombre = document.getElementById('bNombre').value.trim();
+  const email = document.getElementById('bEmail').value.trim().toLowerCase();
+  const pass = document.getElementById('bPass').value;
+  if(!nombre||!email||!pass){ document.getElementById('bErr').textContent='Rellena todos los campos.'; return; }
+  await S.fb.setDoc(S.fb.doc(col('crm2_users'), uid()), {nombre, email, pass, role:'admin', comercialId:null, creado:todayISO()});
+  bootstrapNeeded = false;
+  S.session = {email, nombre, role:'admin', comercialId:null};
+  localStorage.setItem('ey_session', JSON.stringify(S.session));
+  render();
+}
+window.doLogin = async function(){
+  const email = document.getElementById('lEmail').value.trim().toLowerCase();
+  const pass = document.getElementById('lPass').value;
+  const snap = await S.fb.getDocs(S.fb.query(col('crm2_users'), S.fb.where('email','==',email)));
+  const u = snap.docs.map(d=>({id:d.id,...d.data()})).find(x=>x.pass===pass);
+  if(!u){ document.getElementById('lErr').textContent='Email o contraseña incorrectos.'; return; }
+  S.session = {email:u.email, nombre:u.nombre, role:u.role, comercialId:u.comercialId||null};
+  localStorage.setItem('ey_session', JSON.stringify(S.session));
+  render();
+}
+window.doLogout = function(){ S.session=null; localStorage.removeItem('ey_session'); render(); }
+
+/* ===================== SHELL APP ===================== */
+function isAdmin(){ return S.session && S.session.role==='admin'; }
+const OWNER_EMAIL = 'danielgomezgarcia1980@gmail.com';
+function isOwner(){ return S.session && S.session.email===OWNER_EMAIL; }
+function misClientes(){
+  if(isAdmin()) return S.clientes;
+  // Cada comercial ve sus propios clientes asignados + el "pool" de contactos sin asignar todavía.
+  // En cuanto uno de ellos edita un contacto sin asignar, se le asigna automáticamente (ver saveCliente)
+  // y deja de ser visible/editable para el resto.
+  return S.clientes.filter(c=>c.comercialId===S.session.comercialId || !c.comercialId);
+}
+// Puede este usuario editar/abrir este cliente en concreto (comprobación de refuerzo,
+// además del filtrado de listas de misClientes()).
+function puedeEditar(c){
+  if(!c) return false;
+  if(isAdmin()) return true;
+  return !c.comercialId || c.comercialId===S.session.comercialId;
+}
+function viewApp(){
+  const nav = [
+    ['dashboard','Panel'],['clientes','Clientes'],['seguimientos','Seguimientos'],
+    ['comisiones','Comisiones'], ...(isAdmin()?[['comerciales','Comerciales'],['importar','Importar / Exportar']]:[])
+  ];
+  return `
+  <div class="flex min-h-screen">
+    <aside class="w-56 shrink-0 border-r p-4 flex flex-col" style="border-color:var(--line)">
+      <div class="mb-6">
+        <div class="font-extrabold text-lg">EntradasYa</div>
+        <div class="kicker">CRM comercial</div>
+      </div>
+      <nav class="space-y-1 flex-1">
+        ${nav.map(([k,l])=>`<div class="navitem ${S.ui.view===k?'active':''}" onclick="setView('${k}')">${l}</div>`).join('')}
+      </nav>
+      <div class="pt-4 border-t" style="border-color:var(--line)">
+        <div class="text-sm font-semibold">${S.session.nombre||S.session.email}</div>
+        <div class="text-xs mb-3" style="color:var(--ink-dim)">${isAdmin()?'Administrador':'Comercial'}</div>
+        <button class="btn btn-ghost w-full text-xs" onclick="doLogout()">Cerrar sesión</button>
+      </div>
+    </aside>
+    <main class="flex-1 p-6 overflow-x-hidden">
+      ${ S.ui.view==='dashboard' ? viewDashboard() :
+         S.ui.view==='clientes' ? viewClientes() :
+         S.ui.view==='seguimientos' ? viewSeguimientos() :
+         S.ui.view==='comisiones' ? viewComisiones() :
+         S.ui.view==='comerciales' ? viewComerciales() :
+         S.ui.view==='importar' ? viewImportar() : '' }
+    </main>
+  </div>
+  ${S.ui.clienteDetalleId ? modalClienteDetalle() : ''}
+  ${S.ui.showComercialForm ? modalComercialForm() : ''}
+  ${S.ui.showClienteForm ? modalClienteForm() : ''}
+  `;
+}
+window.setView = function(v){ S.ui.view=v; render(); }
+
+/* ===================== DASHBOARD ===================== */
+function viewDashboard(){
+  const cs = misClientes();
+  const total = cs.length;
+  const porEstado = e => cs.filter(c=>c.estado===e).length;
+  const nuevos = porEstado('Nuevo');
+  const contactados = cs.filter(c=>['Contactado','Interesado','Seguimiento','Negociación'].includes(c.estado)).length;
+  const interesados = porEstado('Interesado');
+  const negociacion = porEstado('Negociación');
+  const activos = cs.filter(c=>['Cliente activo','Cliente recurrente','Primer evento'].includes(c.estado)).length;
+  const perdidos = porEstado('Perdido');
+  const hoy = todayISO();
+  const proximos = cs.filter(c=>c.proximoSeguimiento && c.proximoSeguimiento>=hoy).length;
+  let ventasPotTotal=0, retornoPotTotal=0;
+  cs.forEach(c=>{ const p=calcPotencial(c); ventasPotTotal+=p.ventasAnuales; retornoPotTotal+=p.retornoAnual; });
+  const ranking = [...cs].map(c=>({...c,...calcPotencial(c)})).sort((a,b)=>b.retornoAnual-a.retornoAnual).slice(0,10);
+
+  const stat = (label,val,color)=>`
+    <div class="panel p-4">
+      <div class="kicker">${label}</div>
+      <div class="stat-num" style="${color?`color:${color}`:''}">${val}</div>
+    </div>`;
+
+  return `
+  <div class="mb-5">
+    <h2 class="text-xl font-bold">Panel principal</h2>
+    <p class="text-sm" style="color:var(--ink-dim)">Resumen ${isAdmin()?'global':'de tu cartera'}, actualizado en tiempo real.</p>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    ${stat('Total clientes', numf(total))}
+    ${stat('Nuevos', numf(nuevos), '#4d8ff0')}
+    ${stat('Contactados', numf(contactados))}
+    ${stat('Interesados', numf(interesados),'#e0c23e')}
+    ${stat('En negociación', numf(negociacion),'#e0a53e')}
+    ${stat('Clientes activos', numf(activos),'#3ecf8e')}
+    ${stat('Perdidos', numf(perdidos),'#e0603e')}
+    ${stat('Seguimientos pendientes', numf(proximos))}
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+    ${stat('Ventas potenciales / año', money(ventasPotTotal))}
+    ${stat('Retorno potencial / año (4%)', money(retornoPotTotal),'#3ecf8e')}
+    ${stat('Retorno potencial / mes', money(retornoPotTotal/12))}
+  </div>
+  <div class="panel p-4">
+    <div class="font-bold mb-3">Ranking de clientes por potencial económico</div>
+    <div class="overflow-x-auto">
+    <table>
+      <thead><tr><th>Cliente</th><th>Tipo</th><th>Ventas/año</th><th>Retorno 4%/año</th><th>Prioridad</th></tr></thead>
+      <tbody>
+        ${ranking.length? ranking.map(c=>`
+          <tr class="row" onclick="openCliente('${c.id}')">
+            <td class="font-semibold">${esc(c.nombreEmpresa)}</td>
+            <td style="color:var(--ink-dim)">${esc(c.tipoCliente||'-')}</td>
+            <td>${money(c.ventasAnuales)}</td>
+            <td>${money(c.retornoAnual)}</td>
+            <td><span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad}</span></td>
+          </tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Todavía no hay clientes con potencial calculado.</td></tr>`}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  ${isAdmin()? viewRendimientoComerciales() : ''}
+  `;
+}
+function viewRendimientoComerciales(){
+  const rows = S.comerciales.map(cm=>{
+    const propios = S.clientes.filter(c=>c.comercialId===cm.id);
+    const conseguidos = propios.filter(c=>['Cliente activo','Cliente recurrente','Primer evento'].includes(c.estado)).length;
+    const ventas = S.comisiones.filter(k=>propios.some(p=>p.id===k.clienteId)).reduce((a,k)=>a+Number(k.valorTotal||0),0);
+    const comision = ventas*PCT;
+    return {cm, propios:propios.length, conseguidos, ventas, comision};
+  });
+  return `
+  <div class="panel p-4 mt-4">
+    <div class="font-bold mb-3">Rendimiento por comercial</div>
+    <div class="overflow-x-auto">
+    <table>
+      <thead><tr><th>Comercial</th><th>Clientes</th><th>Conseguidos</th><th>Ventas generadas</th><th>Comisión (4%)</th></tr></thead>
+      <tbody>
+      ${rows.length? rows.map(r=>`<tr><td class="font-semibold">${esc(r.cm.nombre)}</td><td>${r.propios}</td><td>${r.conseguidos}</td><td>${money(r.ventas)}</td><td>${money(r.comision)}</td></tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+}
+
+/* ===================== CLIENTES ===================== */
+function viewClientes(){
+  const f = S.ui.clienteFiltro;
+  let cs = misClientes().map(c=>({...c,...calcPotencial(c)}));
+  if(f.q) cs = cs.filter(c=> [c.nombreEmpresa,c.personaContacto,c.telefono,c.email,c.ciudad].join(' ').toLowerCase().includes(f.q.toLowerCase()));
+  if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
+  if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
+  if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
+  if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  cs.sort((a,b)=>b.retornoAnual-a.retornoAnual);
+
+  const comercialOpt = cm => `<option value="${cm.id}" ${f.comercial===cm.id?'selected':''}>${esc(cm.nombre)}</option>`;
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  const visibleIds = cs.map(c=>c.id);
+  const allSelected = visibleIds.length>0 && visibleIds.every(id=>sel.has(id));
+
+  return `
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h2 class="text-xl font-bold">Clientes</h2>
+      <p class="text-sm" style="color:var(--ink-dim)">${cs.length} resultado(s)${sel.size?` · ${sel.size} seleccionado(s)`:''}</p>
+    </div>
+    <div class="flex gap-2">
+      ${isAdmin() && sel.size ? `<button class="btn btn-danger" onclick="deleteSelectedClientes()">Eliminar seleccionados (${sel.size})</button>` : ''}
+      <button class="btn btn-accent" onclick="openClienteForm()">+ Nuevo cliente</button>
+    </div>
+  </div>
+  <div class="panel p-3 mb-4 grid grid-cols-2 md:grid-cols-6 gap-2">
+    <input class="md:col-span-2" placeholder="Buscar nombre, contacto, tel, email, ciudad" value="${esc(f.q)}" oninput="setFiltro('q',this.value)">
+    ${isAdmin()?`<select onchange="setFiltro('comercial',this.value)"><option value="">Comercial: todos</option>${S.comerciales.map(comercialOpt).join('')}</select>`:''}
+    <select onchange="setFiltro('estado',this.value)"><option value="">Estado: todos</option>${ESTADOS.map(e=>`<option ${f.estado===e?'selected':''}>${e}</option>`).join('')}</select>
+    <select onchange="setFiltro('tipo',this.value)"><option value="">Tipo: todos</option>${TIPOS.map(t=>`<option ${f.tipo===t?'selected':''}>${t}</option>`).join('')}</select>
+    <select onchange="setFiltro('prioridad',this.value)"><option value="">Prioridad: todas</option>${['BAJO','MEDIO','ALTO','ESTRATÉGICO'].map(p=>`<option ${f.prioridad===p?'selected':''}>${p}</option>`).join('')}</select>
+  </div>
+  <div class="panel p-4">
+    <div class="overflow-x-auto">
+    <table>
+      <thead><tr>${isAdmin()?`<th style="width:28px"><input type="checkbox" onclick="event.stopPropagation();toggleSelectAllClientes(this.checked)" ${allSelected?'checked':''}></th>`:''}<th>Empresa</th><th>Contacto</th><th>Tipo</th><th>Estado</th><th>Comercial</th><th>Retorno/año</th><th>Prioridad</th><th>Próx. seguim.</th></tr></thead>
+      <tbody>
+      ${cs.length? cs.map(c=>`
+        <tr class="row" onclick="openCliente('${c.id}')">
+          ${isAdmin()?`<td onclick="event.stopPropagation()"><input type="checkbox" onclick="toggleSelectCliente('${c.id}',this.checked)" ${sel.has(c.id)?'checked':''}></td>`:''}
+          <td class="font-semibold">${esc(c.nombreEmpresa)}</td>
+          <td style="color:var(--ink-dim)">${esc(c.personaContacto||'-')}</td>
+          <td>${esc(c.tipoCliente||'-')}</td>
+          <td><span class="badge" style="background:${estadoColor(c.estado)}22;color:${estadoColor(c.estado)}">${esc(c.estado||'-')}</span></td>
+          <td>${!c.comercialId?`<span class="badge" style="background:#4d8ff022;color:#4d8ff0">Sin asignar</span>`:(isAdmin()?`<span style="color:var(--ink-dim)">${esc(nombreComercial(c.comercialId))}</span>`:`<span class="badge" style="background:#3ecf8e22;color:#3ecf8e">Tú</span>`)}</td>
+          <td>${money(c.retornoAnual)}</td>
+          <td><span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad}</span></td>
+          <td style="color:var(--ink-dim)">${fdate(c.proximoSeguimiento)}</td>
+        </tr>`).join('') : `<tr><td colspan="9" style="color:var(--ink-dim)">Sin resultados. Ajusta los filtros o crea un cliente.</td></tr>`}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+}
+window.setFiltro = function(k,v){ S.ui.clienteFiltro[k]=v; render(); }
+function nombreComercial(id){ const c = S.comerciales.find(x=>x.id===id); return c?c.nombre:'Sin asignar'; }
+window.openCliente = function(id){
+  const c = S.clientes.find(x=>x.id===id);
+  if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; }
+  S.ui.clienteDetalleId=id; S.ui.clienteDetalleTab='potencial'; render();
+}
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+/* ---- Formulario nuevo/editar cliente ---- */
+window.openClienteForm = function(id){
+  if(id){ const c = S.clientes.find(x=>x.id===id); if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; } }
+  S.ui.showClienteForm = id || 'new'; render();
+}
+window.closeClienteForm = function(){ S.ui.showClienteForm = null; render(); }
+function modalClienteForm(){
+  const editing = S.ui.showClienteForm!=='new';
+  const c = editing ? S.clientes.find(x=>x.id===S.ui.showClienteForm) : {};
+  const comercialDefault = isAdmin() ? (c.comercialId||'') : S.session.comercialId;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closeClienteForm()">
+    <div class="panel p-6 w-full max-w-xl mt-4">
+      <div class="flex justify-between items-center mb-4">
+        <div class="font-bold text-lg">${editing?'Editar cliente':'Nuevo cliente'}</div>
+        <button class="btn btn-ghost text-xs" onclick="closeClienteForm()">Cerrar</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2"><label>Nombre de empresa / sala / promotora *</label><input id="cf_nombreEmpresa" value="${esc(c.nombreEmpresa)}"></div>
+        <div><label>Persona de contacto</label><input id="cf_personaContacto" value="${esc(c.personaContacto)}"></div>
+        <div><label>Tipo de cliente</label><select id="cf_tipoCliente">${TIPOS.map(t=>`<option ${c.tipoCliente===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        <div><label>Teléfono</label><input id="cf_telefono" value="${esc(c.telefono)}"></div>
+        <div><label>WhatsApp</label><input id="cf_whatsapp" value="${esc(c.whatsapp)}"></div>
+        <div><label>Email</label><input id="cf_email" value="${esc(c.email)}"></div>
+        <div><label>Estado comercial</label><select id="cf_estado">${ESTADOS.map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}</select></div>
+        <div><label>Ciudad</label><input id="cf_ciudad" value="${esc(c.ciudad)}"></div>
+        <div><label>Provincia</label><input id="cf_provincia" value="${esc(c.provincia)}"></div>
+        ${isAdmin()?`<div class="col-span-2"><label>Comercial asignado</label><select id="cf_comercialId"><option value="">Sin asignar</option>${S.comerciales.map(cm=>`<option value="${cm.id}" ${comercialDefault===cm.id?'selected':''}>${esc(cm.nombre)}</option>`).join('')}</select></div>`:''}
+        <div class="col-span-2 pt-2 border-t" style="border-color:var(--line)"><div class="kicker mb-1">Potencial económico</div></div>
+        <div><label>Eventos al año</label><input id="cf_eventosAnio" type="number" min="0" value="${c.eventosAnio??''}"></div>
+        <div><label>Media entradas/evento</label><input id="cf_mediaEntradas" type="number" min="0" value="${c.mediaEntradas??''}"></div>
+        <div><label>Precio medio entrada (€)</label><input id="cf_precioMedio" type="number" min="0" step="0.5" value="${c.precioMedio??''}"></div>
+      </div>
+      <button class="btn btn-accent w-full mt-5" onclick="saveCliente(${editing?`'${c.id}'`:'null'})">Guardar cliente</button>
+    </div>
+  </div>`;
+}
+window.saveCliente = async function(id){
+  const g = k=>document.getElementById('cf_'+k).value;
+  const data = {
+    nombreEmpresa: g('nombreEmpresa').trim(), personaContacto:g('personaContacto').trim(),
+    tipoCliente:g('tipoCliente'), telefono:g('telefono').trim(), whatsapp:g('whatsapp').trim(),
+    email:g('email').trim().toLowerCase(), estado:g('estado'), ciudad:g('ciudad').trim(), provincia:g('provincia').trim(),
+    eventosAnio:Number(g('eventosAnio'))||0, mediaEntradas:Number(g('mediaEntradas'))||0, precioMedio:Number(g('precioMedio'))||0
+  };
+  if(!data.nombreEmpresa){ alert('El nombre de empresa es obligatorio.'); return; }
+
+  if(isAdmin()){
+    // El admin es el único que puede reasignar o dejar sin asignar manualmente.
+    data.comercialId = document.getElementById('cf_comercialId').value||null;
+  } else if(id){
+    // Comprobación anti-carrera: releemos el documento justo antes de guardar por si
+    // otro comercial lo ha reclamado entretanto.
+    const fresh = await S.fb.getDoc(S.fb.doc(col('crm2_clientes'), id));
+    const freshData = fresh.exists() ? fresh.data() : null;
+    if(!freshData || (freshData.comercialId && freshData.comercialId!==S.session.comercialId)){
+      alert('Este contacto acaba de ser asignado a otro comercial. Se han descartado tus cambios.');
+      S.ui.showClienteForm = null; render(); return;
+    }
+    // Sin asignar o ya asignado a mí: lo reclamo/mantengo al guardar.
+    data.comercialId = S.session.comercialId;
+  } else {
+    // Cliente nuevo creado por un comercial: queda asignado directamente a quien lo crea.
+    data.comercialId = S.session.comercialId;
+  }
+
+  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), data); }
+  else{ data.fechaAlta = todayISO(); await S.fb.addDoc(col('crm2_clientes'), data); }
+  S.ui.showClienteForm = null; render();
+}
+window.deleteCliente = async function(id){
+  if(!isAdmin()){ alert('Solo el administrador puede eliminar clientes.'); return; }
+  if(!confirm('¿Eliminar este cliente? Esta acción no se puede deshacer.')) return;
+  await S.fb.deleteDoc(S.fb.doc(col('crm2_clientes'), id));
+  S.ui.clienteDetalleId=null; render();
+}
+window.toggleSelectCliente = function(id, checked){
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  if(checked) sel.add(id); else sel.delete(id);
+  render();
+}
+window.toggleSelectAllClientes = function(checked){
+  const f = S.ui.clienteFiltro;
+  let cs = misClientes();
+  if(f.q) cs = cs.filter(c=> [c.nombreEmpresa,c.personaContacto,c.telefono,c.email,c.ciudad].join(' ').toLowerCase().includes(f.q.toLowerCase()));
+  if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
+  if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
+  if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
+  if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  if(checked) cs.forEach(c=>sel.add(c.id)); else cs.forEach(c=>sel.delete(c.id));
+  render();
+}
+window.deleteSelectedClientes = async function(){
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  if(!sel.size) return;
+  if(!confirm(`¿Eliminar ${sel.size} cliente(s) seleccionados? Esta acción no se puede deshacer.`)) return;
+  const ids = Array.from(sel);
+  let batch = S.fb.writeBatch(S.db); let count=0;
+  for(const id of ids){
+    batch.delete(S.fb.doc(col('crm2_clientes'), id));
+    count++;
+    if(count===450){ await batch.commit(); batch = S.fb.writeBatch(S.db); count=0; }
+  }
+  if(count>0) await batch.commit();
+  sel.clear();
+  render();
+}
+
+/* ---- Detalle de cliente (modal con tabs) ---- */
+function modalClienteDetalle(){
+  const c = S.clientes.find(x=>x.id===S.ui.clienteDetalleId);
+  if(!c){ S.ui.clienteDetalleId=null; return ''; }
+  const p = calcPotencial(c);
+  const tabs = [['potencial','Potencial'],['eventos','Eventos'],['historial','Historial'],['comisiones','Comisiones']];
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closeClienteDetalle()">
+    <div class="panel p-6 w-full max-w-3xl mt-4">
+      <div class="flex justify-between items-start mb-1">
+        <div>
+          <div class="font-bold text-lg">${esc(c.nombreEmpresa)}</div>
+          <div class="text-sm" style="color:var(--ink-dim)">${esc(c.tipoCliente||'-')} · ${esc(c.ciudad||'-')} ${c.provincia?', '+esc(c.provincia):''} · ${nombreComercial(c.comercialId)}</div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost text-xs" onclick="openClienteForm('${c.id}')">Editar</button>
+          ${isAdmin()?`<button class="btn btn-danger text-xs" onclick="deleteCliente('${c.id}')">Eliminar</button>`:''}
+          <button class="btn btn-ghost text-xs" onclick="closeClienteDetalle()">Cerrar</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-3 text-xs mt-2 mb-4" style="color:var(--ink-dim)">
+        <span>${esc(c.personaContacto||'-')}</span><span>·</span><span>${esc(c.telefono||'-')}</span><span>·</span><span>${esc(c.email||'-')}</span>
+        <span class="badge ml-1" style="background:${estadoColor(c.estado)}22;color:${estadoColor(c.estado)}">${esc(c.estado||'-')}</span>
+        <span class="badge" style="${prioridadColor(p.prioridad)}">${p.prioridad}</span>
+      </div>
+      <div class="flex gap-1 mb-4 border-b pb-2" style="border-color:var(--line)">
+        ${tabs.map(([k,l])=>`<div class="tab ${S.ui.clienteDetalleTab===k?'active':''}" onclick="setDetalleTab('${k}')">${l}</div>`).join('')}
+      </div>
+      ${ S.ui.clienteDetalleTab==='potencial' ? tabPotencial(c,p) :
+         S.ui.clienteDetalleTab==='eventos' ? tabEventos(c) :
+         S.ui.clienteDetalleTab==='historial' ? tabHistorial(c) :
+         tabComisionesCliente(c) }
+    </div>
+  </div>`;
+}
+window.closeClienteDetalle = function(){ S.ui.clienteDetalleId=null; render(); }
+window.setDetalleTab = function(t){ S.ui.clienteDetalleTab=t; render(); }
+
+function tabPotencial(c,p){
+  const box = (label,val,big)=>`<div class="panel2 p-4"><div class="kicker">${label}</div><div class="${big?'stat-num':'font-bold text-lg'} mt-1">${val}</div></div>`;
+  return `
+  <div class="grid grid-cols-3 gap-3 mb-4">
+    <div><label>Eventos al año</label><input id="pf_eventosAnio" type="number" min="0" value="${c.eventosAnio??0}" onchange="quickUpdatePotencial('${c.id}')"></div>
+    <div><label>Media entradas/evento</label><input id="pf_mediaEntradas" type="number" min="0" value="${c.mediaEntradas??0}" onchange="quickUpdatePotencial('${c.id}')"></div>
+    <div><label>Precio medio (€)</label><input id="pf_precioMedio" type="number" min="0" step="0.5" value="${c.precioMedio??0}" onchange="quickUpdatePotencial('${c.id}')"></div>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    ${box('Entradas anuales', numf(p.entradasAnuales))}
+    ${box('Ventas anuales', money(p.ventasAnuales))}
+    ${box('Retorno anual (4%)', money(p.retornoAnual), true)}
+    ${box('Retorno mensual', money(p.retornoMensual))}
+  </div>`;
+}
+window.quickUpdatePotencial = async function(id){
+  const data = {
+    eventosAnio:Number(document.getElementById('pf_eventosAnio').value)||0,
+    mediaEntradas:Number(document.getElementById('pf_mediaEntradas').value)||0,
+    precioMedio:Number(document.getElementById('pf_precioMedio').value)||0
+  };
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), data);
+}
+
+function tabEventos(c){
+  const evs = S.eventos.filter(e=>e.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  return `
+  <div class="panel2 p-4 mb-4">
+    <div class="font-semibold text-sm mb-2">Añadir evento</div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+      <div class="col-span-2"><label>Nombre del evento</label><input id="ev_nombre"></div>
+      <div><label>Fecha</label><input id="ev_fecha" type="date"></div>
+      <div><label>Entradas previstas</label><input id="ev_entradas" type="number" min="0"></div>
+      <div><label>Precio medio (€)</label><input id="ev_precio" type="number" min="0" step="0.5"></div>
+      <button class="btn btn-accent col-span-2 md:col-span-1" onclick="addEvento('${c.id}')">Añadir</button>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table>
+    <thead><tr><th>Evento</th><th>Fecha</th><th>Entradas</th><th>Precio</th><th>Ventas previstas</th><th>Retorno previsto</th></tr></thead>
+    <tbody>
+    ${evs.length? evs.map(e=>{ const ventas=(e.entradas||0)*(e.precio||0); const ret=ventas*PCT; return `
+      <tr><td class="font-semibold">${esc(e.nombre)}</td><td>${fdate(e.fecha)}</td><td>${numf(e.entradas)}</td><td>${money(e.precio)}</td><td>${money(ventas)}</td><td>${money(ret)}</td></tr>`;}).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Sin eventos registrados.</td></tr>`}
+    </tbody>
+  </table>
+  </div>`;
+}
+window.addEvento = async function(clienteId){
+  const nombre=document.getElementById('ev_nombre').value.trim();
+  const fecha=document.getElementById('ev_fecha').value;
+  const entradas=Number(document.getElementById('ev_entradas').value)||0;
+  const precio=Number(document.getElementById('ev_precio').value)||0;
+  if(!nombre){ alert('Indica el nombre del evento.'); return; }
+  await S.fb.addDoc(col('crm2_eventos'), {clienteId, nombre, fecha, entradas, precio});
+  render();
+}
+
+function tabHistorial(c){
+  const hs = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  return `
+  <div class="panel2 p-4 mb-4">
+    <div class="font-semibold text-sm mb-2">Registrar contacto</div>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+      <div><label>Fecha</label><input id="hc_fecha" type="date" value="${todayISO()}"></div>
+      <div><label>Tipo de contacto</label><select id="hc_tipo">${TIPOS_CONTACTO.map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div><label>Resultado</label><select id="hc_resultado">${RESULTADOS.map(r=>`<option>${r}</option>`).join('')}</select></div>
+      <div class="col-span-2 md:col-span-3"><label>Comentarios</label><textarea id="hc_comentarios" rows="2"></textarea></div>
+      <div><label>Próximo paso</label><input id="hc_proximoPaso"></div>
+      <div><label>Fecha próximo seguimiento</label><input id="hc_proximoSeguimiento" type="date"></div>
+      <button class="btn btn-accent self-end" onclick="addContacto('${c.id}')">Guardar</button>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Resultado</th><th>Comentarios</th><th>Próximo paso</th><th>Próx. seguim.</th></tr></thead>
+    <tbody>
+    ${hs.length? hs.map(h=>`<tr><td>${fdate(h.fecha)}</td><td>${esc(h.tipo)}</td><td>${esc(h.resultado)}</td><td style="max-width:220px">${esc(h.comentarios||'-')}</td><td>${esc(h.proximoPaso||'-')}</td><td>${fdate(h.proximoSeguimiento)}</td></tr>`).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Sin contactos registrados.</td></tr>`}
+    </tbody>
+  </table>
+  </div>`;
+}
+window.addContacto = async function(clienteId){
+  const fecha=document.getElementById('hc_fecha').value||todayISO();
+  const tipo=document.getElementById('hc_tipo').value;
+  const resultado=document.getElementById('hc_resultado').value;
+  const comentarios=document.getElementById('hc_comentarios').value.trim();
+  const proximoPaso=document.getElementById('hc_proximoPaso').value.trim();
+  const proximoSeguimiento=document.getElementById('hc_proximoSeguimiento').value;
+  await S.fb.addDoc(col('crm2_contactos'), {clienteId, fecha, tipo, resultado, comentarios, proximoPaso, proximoSeguimiento});
+  if(proximoSeguimiento){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {proximoSeguimiento, ultimoContacto:fecha}); }
+  else { await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {ultimoContacto:fecha}); }
+  render();
+}
+
+function tabComisionesCliente(c){
+  const ks = S.comisiones.filter(k=>k.clienteId===c.id);
+  return `
+  <div class="panel2 p-4 mb-4">
+    <div class="font-semibold text-sm mb-2">Registrar venta / comisión</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+      <div><label>Evento</label><input id="km_evento" placeholder="Nombre del evento"></div>
+      <div><label>Entradas vendidas</label><input id="km_entradas" type="number" min="0"></div>
+      <div><label>Valor total vendido (€)</label><input id="km_valor" type="number" min="0" step="0.01"></div>
+      <button class="btn btn-accent" onclick="addComision('${c.id}')">Registrar</button>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table>
+    <thead><tr><th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Retorno cliente 4%</th><th>Comisión comercial 4%</th></tr></thead>
+    <tbody>
+    ${ks.length? ks.map(k=>`<tr><td class="font-semibold">${esc(k.evento)}</td><td>${numf(k.entradas)}</td><td>${money(k.valorTotal)}</td><td>${money(k.valorTotal*PCT)}</td><td>${money(k.valorTotal*PCT)}</td></tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}
+    </tbody>
+  </table>
+  </div>
+  <p class="text-xs mt-2" style="color:var(--ink-dim)">Retorno cliente y comisión comercial son conceptos independientes: cada uno se calcula al 4% sobre el valor vendido, pero se paga a partes distintas.</p>`;
+}
+window.addComision = async function(clienteId){
+  const evento=document.getElementById('km_evento').value.trim();
+  const entradas=Number(document.getElementById('km_entradas').value)||0;
+  const valorTotal=Number(document.getElementById('km_valor').value)||0;
+  if(!evento){ alert('Indica el evento.'); return; }
+  await S.fb.addDoc(col('crm2_comisiones'), {clienteId, evento, entradas, valorTotal, fecha:todayISO()});
+  render();
+}
+
+/* ===================== SEGUIMIENTOS ===================== */
+function viewSeguimientos(){
+  const hoy = todayISO();
+  const cs = misClientes().filter(c=>c.proximoSeguimiento);
+  const atrasados = cs.filter(c=>c.proximoSeguimiento<hoy).sort((a,b)=>a.proximoSeguimiento.localeCompare(b.proximoSeguimiento));
+  const hoyList = cs.filter(c=>c.proximoSeguimiento===hoy);
+  const proximos = cs.filter(c=>c.proximoSeguimiento>hoy).sort((a,b)=>a.proximoSeguimiento.localeCompare(b.proximoSeguimiento));
+  const tabla = (list,label,color)=>`
+    <div class="panel p-4 mb-4">
+      <div class="font-bold mb-3" style="${color?`color:${color}`:''}">${label} (${list.length})</div>
+      <div class="overflow-x-auto"><table>
+        <thead><tr><th>Cliente</th><th>Comercial</th><th>Último contacto</th><th>Próxima acción</th><th>Fecha</th></tr></thead>
+        <tbody>${list.length? list.map(c=>{
+          const ultimo = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))[0];
+          return `<tr class="row" onclick="openCliente('${c.id}')">
+            <td class="font-semibold">${esc(c.nombreEmpresa)}</td>
+            <td style="color:var(--ink-dim)">${nombreComercial(c.comercialId)}</td>
+            <td>${fdate(c.ultimoContacto)}</td>
+            <td>${esc(ultimo?.proximoPaso||'-')}</td>
+            <td>${fdate(c.proximoSeguimiento)}</td></tr>`;
+        }).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Nada aquí.</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+  return `
+  <h2 class="text-xl font-bold mb-1">Seguimientos</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Gestiona tus próximas acciones comerciales.</p>
+  ${tabla(atrasados,'Atrasados','#e0603e')}
+  ${tabla(hoyList,'Hoy','#e0a53e')}
+  ${tabla(proximos,'Próximos')}
+  `;
+}
+
+/* ===================== COMISIONES ===================== */
+function viewComisiones(){
+  const cs = misClientes();
+  const rows = S.comisiones.filter(k=>cs.some(c=>c.id===k.clienteId)).map(k=>{
+    const c = S.clientes.find(x=>x.id===k.clienteId);
+    return {...k, cliente:c};
+  }).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const totalVentas = rows.reduce((a,r)=>a+Number(r.valorTotal||0),0);
+  return `
+  <h2 class="text-xl font-bold mb-1">Comisiones</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Ventas registradas y comisión comercial (4% sobre valor vendido).</p>
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+    <div class="panel p-4"><div class="kicker">Ventas totales</div><div class="stat-num">${money(totalVentas)}</div></div>
+    <div class="panel p-4"><div class="kicker">Comisión total (4%)</div><div class="stat-num" style="color:var(--accent)">${money(totalVentas*PCT)}</div></div>
+    <div class="panel p-4"><div class="kicker">Registros</div><div class="stat-num">${numf(rows.length)}</div></div>
+  </div>
+  <div class="panel p-4"><div class="overflow-x-auto"><table>
+    <thead><tr><th>Fecha</th><th>Cliente</th>${isAdmin()?'<th>Comercial</th>':''}<th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Comisión 4%</th></tr></thead>
+    <tbody>${rows.length? rows.map(r=>`<tr>
+      <td>${fdate(r.fecha)}</td><td class="font-semibold">${esc(r.cliente?.nombreEmpresa||'-')}</td>
+      ${isAdmin()?`<td style="color:var(--ink-dim)">${nombreComercial(r.cliente?.comercialId)}</td>`:''}
+      <td>${esc(r.evento)}</td><td>${numf(r.entradas)}</td><td>${money(r.valorTotal)}</td><td>${money(r.valorTotal*PCT)}</td></tr>`).join('') : `<tr><td colspan="7" style="color:var(--ink-dim)">Sin ventas registradas todavía.</td></tr>`}</tbody>
+  </table></div></div>`;
+}
+
+/* ===================== COMERCIALES (admin) ===================== */
+function viewComerciales(){
+  return `
+  <div class="flex items-center justify-between mb-5">
+    <div><h2 class="text-xl font-bold">Comerciales</h2><p class="text-sm" style="color:var(--ink-dim)">${S.comerciales.length} en el equipo</p></div>
+    <button class="btn btn-accent" onclick="openComercialForm()">+ Nuevo comercial</button>
+  </div>
+  <div class="panel p-4"><div class="overflow-x-auto"><table>
+    <thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Estado</th><th>Clientes</th><th></th></tr></thead>
+    <tbody>${S.comerciales.length? S.comerciales.map(cm=>{
+      const n = S.clientes.filter(c=>c.comercialId===cm.id).length;
+      return `<tr>
+        <td class="font-semibold">${esc(cm.nombre)}</td><td>${esc(cm.email)}</td><td>${esc(cm.telefono||'-')}</td>
+        <td>${fdate(cm.fechaIncorporacion)}</td>
+        <td><span class="badge" style="background:${cm.estado==='activo'?'#26332c':'#332626'};color:${cm.estado==='activo'?'#3ecf8e':'#e0603e'}">${cm.estado}</span></td>
+        <td>${n}</td>
+        <td><button class="btn btn-ghost text-xs" onclick="openComercialForm('${cm.id}')">Editar</button></td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="7" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}</tbody>
+  </table></div></div>`;
+}
+window.openComercialForm = function(id){ S.ui.showComercialForm = id || 'new'; render(); }
+window.closeComercialForm = function(){ S.ui.showComercialForm = null; render(); }
+function modalComercialForm(){
+  const editing = S.ui.showComercialForm!=='new';
+  const cm = editing ? S.comerciales.find(x=>x.id===S.ui.showComercialForm) : {};
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closeComercialForm()">
+    <div class="panel p-6 w-full max-w-md mt-4">
+      <div class="flex justify-between items-center mb-4"><div class="font-bold text-lg">${editing?'Editar comercial':'Nuevo comercial'}</div><button class="btn btn-ghost text-xs" onclick="closeComercialForm()">Cerrar</button></div>
+      <div class="space-y-3">
+        <div><label>Nombre</label><input id="cm_nombre" value="${esc(cm.nombre)}"></div>
+        <div><label>Email</label><input id="cm_email" type="email" value="${esc(cm.email)}"></div>
+        <div><label>Teléfono</label><input id="cm_telefono" value="${esc(cm.telefono)}"></div>
+        <div><label>Fecha de incorporación</label><input id="cm_fecha" type="date" value="${cm.fechaIncorporacion||todayISO()}"></div>
+        <div><label>Estado</label><select id="cm_estado"><option value="activo" ${cm.estado==='activo'?'selected':''}>Activo</option><option value="inactivo" ${cm.estado==='inactivo'?'selected':''}>Inactivo</option></select></div>
+        ${!editing?`<div class="pt-2 border-t" style="border-color:var(--line)"><div class="kicker mb-2">Acceso al CRM</div><label>Contraseña de acceso</label><input id="cm_pass" type="password"></div>`:''}
+      </div>
+      <button class="btn btn-accent w-full mt-5" onclick="saveComercial(${editing?`'${cm.id}'`:'null'})">Guardar</button>
+    </div>
+  </div>`;
+}
+window.saveComercial = async function(id){
+  const g = k=>document.getElementById('cm_'+k).value;
+  const data = {nombre:g('nombre').trim(), email:g('email').trim().toLowerCase(), telefono:g('telefono').trim(), fechaIncorporacion:g('fecha'), estado:g('estado')};
+  if(!data.nombre||!data.email){ alert('Nombre y email son obligatorios.'); return; }
+  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), data); }
+  else{
+    const ref = await S.fb.addDoc(col('crm2_comerciales'), data);
+    const pass = g('pass') || Math.random().toString(36).slice(2,8);
+    await S.fb.setDoc(S.fb.doc(col('crm2_users'), uid()), {nombre:data.nombre, email:data.email, pass, role:'comercial', comercialId:ref.id, creado:todayISO()});
+  }
+  S.ui.showComercialForm=null; render();
+}
+
+/* ===================== IMPORTAR / EXPORTAR ===================== */
+function viewImportar(){
+  return `
+  <h2 class="text-xl font-bold mb-1">Importar / Exportar</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Importa tu base de contactos desde CSV o exporta la cartera actual.</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="panel p-5">
+      <div class="font-bold mb-2">Importar CSV</div>
+      <p class="text-xs mb-3" style="color:var(--ink-dim)">Columnas esperadas: Nombre, Empresa, Teléfono, Email, Ciudad, Provincia, Tipo de cliente. El sistema detecta duplicados por email o teléfono antes de importar.</p>
+      <input type="file" id="csvFile" accept=".csv" class="mb-3">
+      <button class="btn btn-accent" onclick="handleCsvFile()">Analizar archivo</button>
+      <div id="importResult" class="mt-4"></div>
+    </div>
+    <div class="panel p-5">
+      <div class="font-bold mb-2">Exportar clientes</div>
+      ${isOwner()?`
+      <p class="text-xs mb-3" style="color:var(--ink-dim)">Exporta la cartera visible actualmente (según tus filtros en la pestaña Clientes).</p>
+      <button class="btn btn-ghost" onclick="exportCsv()">Descargar CSV</button>
+      `:`
+      <p class="text-xs" style="color:var(--ink-dim)">La descarga de la base de datos está restringida al administrador principal.</p>
+      `}
+    </div>
+  </div>`;
+}
+window.handleCsvFile = function(){
+  const file = document.getElementById('csvFile').files[0];
+  if(!file){ alert('Selecciona un archivo CSV.'); return; }
+  Papa.parse(file, {
+    header:true, skipEmptyLines:true,
+    complete: res => processImport(res.data)
+  });
+}
+function normPhone(s){ return (s||'').replace(/\D/g,''); }
+function processImport(rows){
+  const existingEmails = new Set(S.clientes.map(c=>(c.email||'').toLowerCase()).filter(Boolean));
+  const existingPhones = new Set(S.clientes.map(c=>normPhone(c.telefono)).filter(Boolean));
+  const get = (r,...keys)=>{ for(const k of keys){ const found = Object.keys(r).find(kk=>kk.trim().toLowerCase()===k); if(found && r[found]) return r[found]; } return ''; };
+  const mapped = rows.map(r=>({
+    nombreEmpresa: get(r,'empresa','nombre de empresa','sala','compañía')||get(r,'nombre'),
+    personaContacto: get(r,'nombre','persona de contacto','contacto'),
+    telefono: get(r,'teléfono','telefono','tel','whatsapp'),
+    email: get(r,'email','correo').toLowerCase(),
+    ciudad: get(r,'ciudad'),
+    provincia: get(r,'provincia'),
+    tipoCliente: get(r,'tipo de cliente','tipo')||'Otro'
+  })).filter(r=>r.nombreEmpresa);
+  mapped.forEach(r=>{ r.dup = (r.email && existingEmails.has(r.email)) || (r.telefono && existingPhones.has(normPhone(r.telefono))); });
+  S.ui.importRows = mapped;
+  const dupes = mapped.filter(r=>r.dup).length;
+  document.getElementById('importResult').innerHTML = `
+    <div class="text-sm mb-2">${mapped.length} filas leídas · <span style="color:${dupes?'var(--warn)':'var(--accent)'}">${dupes} posibles duplicados detectados</span></div>
+    <div class="max-h-64 overflow-y-auto panel2 p-2 mb-3 text-xs">
+      ${mapped.slice(0,300).map(r=>`<div class="flex justify-between py-1 border-b" style="border-color:var(--line)"><span>${esc(r.nombreEmpresa)} ${r.dup?'<span class=\"badge\" style=\"background:#332626;color:#e0603e\">DUPLICADO</span>':''}</span><span style="color:var(--ink-dim)">${esc(r.email||r.telefono||'')}</span></div>`).join('')}
+      ${mapped.length>300?`<div class="text-center pt-2" style="color:var(--ink-dim)">... y ${mapped.length-300} más</div>`:''}
+    </div>
+    <button class="btn btn-accent" onclick="confirmImport(false)">Importar ${mapped.length-dupes} nuevos (omitir duplicados)</button>
+    <button class="btn btn-ghost ml-2" onclick="confirmImport(true)">Importar todos igualmente</button>
+  `;
+}
+window.confirmImport = async function(includeDupes){
+  const rows = includeDupes ? S.ui.importRows : S.ui.importRows.filter(r=>!r.dup);
+  let batch = S.fb.writeBatch(S.db); let count=0; let total=0;
+  for(const r of rows){
+    const ref = S.fb.doc(col('crm2_clientes'));
+    batch.set(ref, {
+      nombreEmpresa:r.nombreEmpresa, personaContacto:r.personaContacto, telefono:r.telefono, email:r.email,
+      ciudad:r.ciudad, provincia:r.provincia, tipoCliente:r.tipoCliente, estado:'Nuevo',
+      comercialId: isAdmin()? null : S.session.comercialId, fechaAlta:todayISO(),
+      eventosAnio:0, mediaEntradas:0, precioMedio:0
+    });
+    count++; total++;
+    if(count===450){ await batch.commit(); batch = S.fb.writeBatch(S.db); count=0; }
+  }
+  if(count>0) await batch.commit();
+  alert(`${total} clientes importados correctamente.`);
+  document.getElementById('importResult').innerHTML='';
+  S.ui.importRows=[];
+}
+window.exportCsv = function(){
+  if(!isOwner()){ alert('No tienes permiso para descargar la base de datos.'); return; }
+  const f = S.ui.clienteFiltro;
+  let cs = misClientes().map(c=>({...c,...calcPotencial(c)}));
+  if(f.q) cs = cs.filter(c=> [c.nombreEmpresa,c.personaContacto,c.telefono,c.email,c.ciudad].join(' ').toLowerCase().includes(f.q.toLowerCase()));
+  if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
+  if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
+  if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
+  if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  const data = cs.map(c=>({
+    Empresa:c.nombreEmpresa, Contacto:c.personaContacto, Telefono:c.telefono, Email:c.email, Ciudad:c.ciudad, Provincia:c.provincia,
+    Tipo:c.tipoCliente, Estado:c.estado, Comercial:nombreComercial(c.comercialId),
+    EventosAnio:c.eventosAnio, MediaEntradas:c.mediaEntradas, PrecioMedio:c.precioMedio,
+    VentasAnuales:c.ventasAnuales, RetornoAnual:c.retornoAnual, Prioridad:c.prioridad
+  }));
+  const csv = Papa.unparse(data);
+  const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entradasya_clientes.csv'; a.click();
+}
+
+/* ===================== INICIO ===================== */
+window.addEventListener('fb-ready', ()=>{ render(); });
+</script>
 </body>
 </html>
