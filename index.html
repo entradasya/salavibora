@@ -43,6 +43,8 @@ window.dispatchEvent(new Event("fb-ready"));
   .modal-bg{position:fixed; inset:0; background:rgba(6,10,14,.7); display:flex; align-items:flex-start; justify-content:center; z-index:50; padding:2rem 1rem; overflow-y:auto;}
   .tab{padding:.5rem .9rem; border-radius:7px; font-size:.8rem; font-weight:600; color:var(--ink-dim); cursor:pointer;}
   .tab.active{background:var(--panel2); color:var(--accent);}
+  input[type=checkbox]{width:20px; height:20px; cursor:pointer; accent-color:var(--accent); vertical-align:middle;}
+  th input[type=checkbox], td input[type=checkbox]{width:20px; height:20px;}
   .stat-num{font-size:1.7rem; font-weight:800; line-height:1;}
   .kicker{font-size:.68rem; color:var(--ink-dim); font-weight:600; text-transform:uppercase; letter-spacing:.05em;}
 </style>
@@ -58,7 +60,7 @@ const S = {
   session: JSON.parse(localStorage.getItem('ey_session')||'null'),
   comerciales:[], clientes:[], eventos:[], contactos:[], comisiones:[],
   listenersOn:false,
-  ui:{ view:'dashboard', clienteFiltro:{q:'',comercial:'',estado:'',tipo:'',prioridad:''}, clienteDetalleId:null, clienteDetalleTab:'potencial', importStep:0, importRows:[], importDupes:[] }
+  ui:{ view:'dashboard', clienteFiltro:{q:'',comercial:'',estado:'',tipo:'',prioridad:''}, clienteDetalleId:null, clienteDetalleTab:'comisiones', importStep:0, importRows:[], importDupes:[] }
 };
 const PCT = 0.04;
 const money = n => (isFinite(n)?n:0).toLocaleString('es-ES',{style:'currency',currency:'EUR',maximumFractionDigits:0});
@@ -67,20 +69,21 @@ const fdate = d => { if(!d) return '-'; const dt = (d instanceof Date)? d : new 
 const todayISO = () => new Date().toISOString().slice(0,10);
 const uid = () => Math.random().toString(36).slice(2,10);
 
-const ESTADOS = ["Nuevo","Contactado","Interesado","Seguimiento","Negociación","Primer evento","Cliente activo","Cliente recurrente","Perdido"];
-const TIPOS = ["Sala","Discoteca","Promotor","Productora","Festival","Asociación","Teatro","Organizador","Artista / manager","Otro"];
+const ESTADOS = ["Nuevo","1º toma de contacto","Interesado","Seguimiento","Negociación","Primer evento","Cliente activo","Cliente recurrente","Perdido"];
+const TIPOS = ["Sala","Discoteca","Promotor","Productora","Festival","Asociación","Teatro","Palacio de congresos/Auditorios","Artista / manager","Otro"];
 const TIPOS_CONTACTO = ["Llamada","WhatsApp","Email","Instagram","Reunión","Videollamada","Otro"];
-const RESULTADOS = ["No contesta","Contactado","Interesado","Quiere información","Quiere reunión","Quiere probar EntradasYa.es","Negociación","Cliente conseguido","No interesado"];
+const PRIORIDADES = ["BAJO","MEDIO","ALTO","ESTRATÉGICO"];
+const RESULTADOS = ["No contesta","1º toma de contacto","Interesado","Quiere información","Quiere reunión","Quiere probar EntradasYa.es","Negociación","Cliente conseguido","No interesado"];
 
+// Calcula ventas y retorno REALES a partir de los eventos/comisiones que se han
+// introducido para ese cliente (ya no es una estimación, son datos reales una vez registrados).
 function calcPotencial(c){
-  const eventosAnio = Number(c.eventosAnio)||0;
-  const mediaEntradas = Number(c.mediaEntradas)||0;
-  const precioMedio = Number(c.precioMedio)||0;
-  const entradasAnuales = eventosAnio*mediaEntradas;
-  const ventasAnuales = entradasAnuales*precioMedio;
+  const ks = S.comisiones.filter(k=>k.clienteId===c.id);
+  const entradasAnuales = ks.reduce((a,k)=>a+(Number(k.entradas)||0),0);
+  const ventasAnuales = ks.reduce((a,k)=>a+(Number(k.valorTotal)||0),0);
   const retornoAnual = ventasAnuales*PCT;
   const retornoMensual = retornoAnual/12;
-  return {entradasAnuales, ventasAnuales, retornoAnual, retornoMensual, prioridad:prioridadDe(retornoAnual)};
+  return {entradasAnuales, ventasAnuales, retornoAnual, retornoMensual};
 }
 function prioridadDe(retornoAnual){
   if(retornoAnual>10000) return 'ESTRATÉGICO';
@@ -92,7 +95,7 @@ function prioridadColor(p){
   return {BAJO:'background:#2a2f22;color:#a9c15a', MEDIO:'background:#2a2c1e;color:#e0c23e', ALTO:'background:#2c2418;color:#e0a53e', 'ESTRATÉGICO':'background:#26332c;color:#3ecf8e'}[p]||'';
 }
 function estadoColor(e){
-  const map = {Nuevo:'#4d8ff0', Contactado:'#4d8ff0', Interesado:'#e0c23e', Seguimiento:'#e0a53e', Negociación:'#e0a53e', 'Primer evento':'#3ecf8e', 'Cliente activo':'#3ecf8e', 'Cliente recurrente':'#3ecf8e', Perdido:'#e0603e'};
+  const map = {Nuevo:'#4d8ff0', '1º toma de contacto':'#4d8ff0', Interesado:'#e0c23e', Seguimiento:'#e0a53e', Negociación:'#e0a53e', 'Primer evento':'#3ecf8e', 'Cliente activo':'#3ecf8e', 'Cliente recurrente':'#3ecf8e', Perdido:'#e0603e'};
   return map[e]||'#8fa1b0';
 }
 
@@ -111,7 +114,7 @@ function startListeners(){
   S.listenersOn = true;
   S.fb.onSnapshot(col('crm2_comerciales'), snap=>{ S.comerciales = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
   S.fb.onSnapshot(col('crm2_clientes'), snap=>{ S.clientes = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
-  S.fb.onSnapshot(col('crm2_eventos'), snap=>{ S.eventos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  // (crm2_eventos ya no se usa: los eventos/comisiones reales viven en crm2_comisiones)
   S.fb.onSnapshot(col('crm2_contactos'), snap=>{ S.contactos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
   S.fb.onSnapshot(col('crm2_comisiones'), snap=>{ S.comisiones = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
 }
@@ -231,8 +234,6 @@ function misClientes(){
   // y deja de ser visible/editable para el resto.
   return S.clientes.filter(c=>c.comercialId===S.session.comercialId || !c.comercialId);
 }
-// Puede este usuario editar/abrir este cliente en concreto (comprobación de refuerzo,
-// además del filtrado de listas de misClientes()).
 function puedeEditar(c){
   if(!c) return false;
   if(isAdmin()) return true;
@@ -281,7 +282,7 @@ function viewDashboard(){
   const total = cs.length;
   const porEstado = e => cs.filter(c=>c.estado===e).length;
   const nuevos = porEstado('Nuevo');
-  const contactados = cs.filter(c=>['Contactado','Interesado','Seguimiento','Negociación'].includes(c.estado)).length;
+  const contactados = cs.filter(c=>['1º toma de contacto','Interesado','Seguimiento','Negociación'].includes(c.estado)).length;
   const interesados = porEstado('Interesado');
   const negociacion = porEstado('Negociación');
   const activos = cs.filter(c=>['Cliente activo','Cliente recurrente','Primer evento'].includes(c.estado)).length;
@@ -340,21 +341,33 @@ function viewDashboard(){
   `;
 }
 function viewRendimientoComerciales(){
+  const ESTADOS_RANKING = ['1º toma de contacto','Interesado','Negociación','Primer evento','Cliente activo','Cliente recurrente'];
   const rows = S.comerciales.map(cm=>{
     const propios = S.clientes.filter(c=>c.comercialId===cm.id);
     const conseguidos = propios.filter(c=>['Cliente activo','Cliente recurrente','Primer evento'].includes(c.estado)).length;
     const ventas = S.comisiones.filter(k=>propios.some(p=>p.id===k.clienteId)).reduce((a,k)=>a+Number(k.valorTotal||0),0);
     const comision = ventas*PCT;
-    return {cm, propios:propios.length, conseguidos, ventas, comision};
+    const porEstado = {};
+    ESTADOS_RANKING.forEach(e=> porEstado[e] = propios.filter(c=>c.estado===e).length);
+    return {cm, propios:propios.length, conseguidos, ventas, comision, porEstado};
   });
+  const ranking = [...rows].sort((a,b)=>b.ventas-a.ventas);
+
   return `
   <div class="panel p-4 mt-4">
-    <div class="font-bold mb-3">Rendimiento por comercial</div>
+    <div class="font-bold mb-3">Ranking de comerciales</div>
     <div class="overflow-x-auto">
     <table>
-      <thead><tr><th>Comercial</th><th>Clientes</th><th>Conseguidos</th><th>Ventas generadas</th><th>Comisión (4%)</th></tr></thead>
+      <thead><tr><th>#</th><th>Comercial</th>${ESTADOS_RANKING.map(e=>`<th>${e}</th>`).join('')}<th>Clientes conseguidos</th><th>Ventas generadas</th><th>Comisión (4%)</th></tr></thead>
       <tbody>
-      ${rows.length? rows.map(r=>`<tr><td class="font-semibold">${esc(r.cm.nombre)}</td><td>${r.propios}</td><td>${r.conseguidos}</td><td>${money(r.ventas)}</td><td>${money(r.comision)}</td></tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}
+      ${ranking.length? ranking.map((r,i)=>`<tr${i===0?' style="background:var(--panel-2,rgba(62,207,142,.08))"':''}>
+          <td class="font-bold">${i+1}º</td>
+          <td class="font-semibold">${esc(r.cm.nombre)}</td>
+          ${ESTADOS_RANKING.map(e=>`<td style="text-align:center">${r.porEstado[e]}</td>`).join('')}
+          <td>${r.conseguidos}</td>
+          <td class="font-semibold">${money(r.ventas)}</td>
+          <td>${money(r.comision)}</td>
+        </tr>`).join('') : `<tr><td colspan="${4+ESTADOS_RANKING.length}" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}
       </tbody>
     </table>
     </div>
@@ -393,36 +406,41 @@ function viewClientes(){
     ${isAdmin()?`<select onchange="setFiltro('comercial',this.value)"><option value="">Comercial: todos</option>${S.comerciales.map(comercialOpt).join('')}</select>`:''}
     <select onchange="setFiltro('estado',this.value)"><option value="">Estado: todos</option>${ESTADOS.map(e=>`<option ${f.estado===e?'selected':''}>${e}</option>`).join('')}</select>
     <select onchange="setFiltro('tipo',this.value)"><option value="">Tipo: todos</option>${TIPOS.map(t=>`<option ${f.tipo===t?'selected':''}>${t}</option>`).join('')}</select>
-    <select onchange="setFiltro('prioridad',this.value)"><option value="">Prioridad: todas</option>${['BAJO','MEDIO','ALTO','ESTRATÉGICO'].map(p=>`<option ${f.prioridad===p?'selected':''}>${p}</option>`).join('')}</select>
+    <select onchange="setFiltro('prioridad',this.value)"><option value="">Prioridad: todas</option>${PRIORIDADES.map(p=>`<option ${f.prioridad===p?'selected':''}>${p}</option>`).join('')}</select>
   </div>
   <div class="panel p-4">
     <div class="overflow-x-auto">
     <table>
-      <thead><tr>${isAdmin()?`<th style="width:28px"><input type="checkbox" onclick="event.stopPropagation();toggleSelectAllClientes(this.checked)" ${allSelected?'checked':''}></th>`:''}<th>Empresa</th><th>Contacto</th><th>Tipo</th><th>Estado</th><th>Comercial</th><th>Retorno/año</th><th>Prioridad</th><th>Próx. seguim.</th></tr></thead>
+      <thead><tr>${isAdmin()?`<th style="width:40px;padding:.5rem"><input type="checkbox" onclick="event.stopPropagation();toggleSelectAllClientes(this.checked)" ${allSelected?'checked':''}></th>`:''}<th>Empresa</th><th>Contacto</th><th>Población</th><th>Tipo</th><th>Estado</th>${isAdmin()?'<th>Comercial</th>':''}<th>Retorno</th><th>Prioridad</th><th>Próx. seguim.</th></tr></thead>
       <tbody>
       ${cs.length? cs.map(c=>`
         <tr class="row" onclick="openCliente('${c.id}')">
-          ${isAdmin()?`<td onclick="event.stopPropagation()"><input type="checkbox" onclick="toggleSelectCliente('${c.id}',this.checked)" ${sel.has(c.id)?'checked':''}></td>`:''}
+          ${isAdmin()?`<td onclick="event.stopPropagation()" style="padding:.5rem;text-align:center"><input type="checkbox" onclick="toggleSelectCliente('${c.id}',this.checked)" ${sel.has(c.id)?'checked':''}></td>`:''}
           <td class="font-semibold">${esc(c.nombreEmpresa)}</td>
           <td style="color:var(--ink-dim)">${esc(c.personaContacto||'-')}</td>
+          <td style="color:var(--ink-dim)">${esc(c.ciudad||'-')}</td>
           <td>${esc(c.tipoCliente||'-')}</td>
           <td><span class="badge" style="background:${estadoColor(c.estado)}22;color:${estadoColor(c.estado)}">${esc(c.estado||'-')}</span></td>
-          <td>${!c.comercialId?`<span class="badge" style="background:#4d8ff022;color:#4d8ff0">Sin asignar</span>`:(isAdmin()?`<span style="color:var(--ink-dim)">${esc(nombreComercial(c.comercialId))}</span>`:`<span class="badge" style="background:#3ecf8e22;color:#3ecf8e">Tú</span>`)}</td>
+          ${isAdmin()?`<td onclick="event.stopPropagation()"><select onchange="asignarComercialRapido('${c.id}',this.value)"><option value="">Sin asignar</option>${S.comerciales.map(cm=>`<option value="${cm.id}" ${c.comercialId===cm.id?'selected':''}>${esc(cm.nombre)}</option>`).join('')}</select></td>`:''}
           <td>${money(c.retornoAnual)}</td>
-          <td><span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad}</span></td>
+          <td><span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad||'-'}</span></td>
           <td style="color:var(--ink-dim)">${fdate(c.proximoSeguimiento)}</td>
-        </tr>`).join('') : `<tr><td colspan="9" style="color:var(--ink-dim)">Sin resultados. Ajusta los filtros o crea un cliente.</td></tr>`}
+        </tr>`).join('') : `<tr><td colspan="10" style="color:var(--ink-dim)">Sin resultados. Ajusta los filtros o crea un cliente.</td></tr>`}
       </tbody>
     </table>
     </div>
   </div>`;
 }
 window.setFiltro = function(k,v){ S.ui.clienteFiltro[k]=v; render(); }
+window.asignarComercialRapido = async function(clienteId,comercialId){
+  if(!isAdmin()) return;
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {comercialId: comercialId||null});
+}
 function nombreComercial(id){ const c = S.comerciales.find(x=>x.id===id); return c?c.nombre:'Sin asignar'; }
 window.openCliente = function(id){
   const c = S.clientes.find(x=>x.id===id);
   if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; }
-  S.ui.clienteDetalleId=id; S.ui.clienteDetalleTab='potencial'; render();
+  S.ui.clienteDetalleId=id; S.ui.clienteDetalleTab='comisiones'; render();
 }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
@@ -450,14 +468,13 @@ function modalClienteForm(){
         <div><label>Teléfono</label><input id="cf_telefono" value="${esc(c.telefono)}"></div>
         <div><label>WhatsApp</label><input id="cf_whatsapp" value="${esc(c.whatsapp)}"></div>
         <div><label>Email</label><input id="cf_email" value="${esc(c.email)}"></div>
+        <div><label>Instagram</label><input id="cf_instagram" placeholder="@usuario" value="${esc(c.instagram)}"></div>
+        <div><label>Web</label><input id="cf_web" placeholder="https://" value="${esc(c.web)}"></div>
         <div><label>Estado comercial</label><select id="cf_estado">${ESTADOS.map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}</select></div>
-        <div><label>Ciudad</label><input id="cf_ciudad" value="${esc(c.ciudad)}"></div>
+        <div><label>Prioridad</label><select id="cf_prioridad">${PRIORIDADES.map(p=>`<option ${(c.prioridad||'BAJO')===p?'selected':''}>${p}</option>`).join('')}</select></div>
+        <div><label>Ciudad / Población</label><input id="cf_ciudad" value="${esc(c.ciudad)}"></div>
         <div><label>Provincia</label><input id="cf_provincia" value="${esc(c.provincia)}"></div>
         ${isAdmin()?`<div class="col-span-2"><label>Comercial asignado</label><select id="cf_comercialId"><option value="">Sin asignar</option>${S.comerciales.map(cm=>`<option value="${cm.id}" ${comercialDefault===cm.id?'selected':''}>${esc(cm.nombre)}</option>`).join('')}</select></div>`:''}
-        <div class="col-span-2 pt-2 border-t" style="border-color:var(--line)"><div class="kicker mb-1">Potencial económico</div></div>
-        <div><label>Eventos al año</label><input id="cf_eventosAnio" type="number" min="0" value="${c.eventosAnio??''}"></div>
-        <div><label>Media entradas/evento</label><input id="cf_mediaEntradas" type="number" min="0" value="${c.mediaEntradas??''}"></div>
-        <div><label>Precio medio entrada (€)</label><input id="cf_precioMedio" type="number" min="0" step="0.5" value="${c.precioMedio??''}"></div>
       </div>
       <button class="btn btn-accent w-full mt-5" onclick="saveCliente(${editing?`'${c.id}'`:'null'})">Guardar cliente</button>
     </div>
@@ -468,28 +485,25 @@ window.saveCliente = async function(id){
   const data = {
     nombreEmpresa: g('nombreEmpresa').trim(), personaContacto:g('personaContacto').trim(),
     tipoCliente:g('tipoCliente'), telefono:g('telefono').trim(), whatsapp:g('whatsapp').trim(),
-    email:g('email').trim().toLowerCase(), estado:g('estado'), ciudad:g('ciudad').trim(), provincia:g('provincia').trim(),
-    eventosAnio:Number(g('eventosAnio'))||0, mediaEntradas:Number(g('mediaEntradas'))||0, precioMedio:Number(g('precioMedio'))||0
+    email:g('email').trim().toLowerCase(), instagram:g('instagram').trim().replace(/^@/,''),
+    web:g('web').trim(),
+    estado:g('estado'), prioridad:g('prioridad'), ciudad:g('ciudad').trim(), provincia:g('provincia').trim(),
+    comercialId: isAdmin()? (document.getElementById('cf_comercialId').value||null) : S.session.comercialId
   };
   if(!data.nombreEmpresa){ alert('El nombre de empresa es obligatorio.'); return; }
 
-  if(isAdmin()){
-    // El admin es el único que puede reasignar o dejar sin asignar manualmente.
-    data.comercialId = document.getElementById('cf_comercialId').value||null;
-  } else if(id){
-    // Comprobación anti-carrera: releemos el documento justo antes de guardar por si
-    // otro comercial lo ha reclamado entretanto.
-    const fresh = await S.fb.getDoc(S.fb.doc(col('crm2_clientes'), id));
-    const freshData = fresh.exists() ? fresh.data() : null;
-    if(!freshData || (freshData.comercialId && freshData.comercialId!==S.session.comercialId)){
-      alert('Este contacto acaba de ser asignado a otro comercial. Se han descartado tus cambios.');
-      S.ui.showClienteForm = null; render(); return;
+  if(!isAdmin()){
+    if(id){
+      // Comprobación anti-carrera: releemos el documento justo antes de guardar por si
+      // otro comercial lo ha reclamado entretanto.
+      const fresh = await S.fb.getDoc(S.fb.doc(col('crm2_clientes'), id));
+      const freshData = fresh.exists() ? fresh.data() : null;
+      if(!freshData || (freshData.comercialId && freshData.comercialId!==S.session.comercialId)){
+        alert('Este contacto acaba de ser asignado a otro comercial. Se han descartado tus cambios.');
+        S.ui.showClienteForm = null; render(); return;
+      }
     }
-    // Sin asignar o ya asignado a mí: lo reclamo/mantengo al guardar.
-    data.comercialId = S.session.comercialId;
-  } else {
-    // Cliente nuevo creado por un comercial: queda asignado directamente a quien lo crea.
-    data.comercialId = S.session.comercialId;
+    data.comercialId = S.session.comercialId; // se reclama/mantiene al guardar
   }
 
   if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), data); }
@@ -540,7 +554,7 @@ function modalClienteDetalle(){
   const c = S.clientes.find(x=>x.id===S.ui.clienteDetalleId);
   if(!c){ S.ui.clienteDetalleId=null; return ''; }
   const p = calcPotencial(c);
-  const tabs = [['potencial','Potencial'],['eventos','Eventos'],['historial','Historial'],['comisiones','Comisiones']];
+  const tabs = [['comisiones','Eventos/Comisiones'],['historial','Historial']];
   return `
   <div class="modal-bg" onclick="if(event.target===this) closeClienteDetalle()">
     <div class="panel p-6 w-full max-w-3xl mt-4">
@@ -556,79 +570,19 @@ function modalClienteDetalle(){
         </div>
       </div>
       <div class="flex flex-wrap gap-3 text-xs mt-2 mb-4" style="color:var(--ink-dim)">
-        <span>${esc(c.personaContacto||'-')}</span><span>·</span><span>${esc(c.telefono||'-')}</span><span>·</span><span>${esc(c.email||'-')}</span>
+        <span>${esc(c.personaContacto||'-')}</span><span>·</span><span>${esc(c.telefono||'-')}</span><span>·</span><span>${esc(c.email||'-')}</span>${c.instagram?`<span>·</span><span>@${esc(c.instagram)}</span>`:''}
         <span class="badge ml-1" style="background:${estadoColor(c.estado)}22;color:${estadoColor(c.estado)}">${esc(c.estado||'-')}</span>
-        <span class="badge" style="${prioridadColor(p.prioridad)}">${p.prioridad}</span>
+        <span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad||'-'}</span>
       </div>
       <div class="flex gap-1 mb-4 border-b pb-2" style="border-color:var(--line)">
         ${tabs.map(([k,l])=>`<div class="tab ${S.ui.clienteDetalleTab===k?'active':''}" onclick="setDetalleTab('${k}')">${l}</div>`).join('')}
       </div>
-      ${ S.ui.clienteDetalleTab==='potencial' ? tabPotencial(c,p) :
-         S.ui.clienteDetalleTab==='eventos' ? tabEventos(c) :
-         S.ui.clienteDetalleTab==='historial' ? tabHistorial(c) :
-         tabComisionesCliente(c) }
+      ${ S.ui.clienteDetalleTab==='historial' ? tabHistorial(c) : tabComisionesCliente(c) }
     </div>
   </div>`;
 }
 window.closeClienteDetalle = function(){ S.ui.clienteDetalleId=null; render(); }
 window.setDetalleTab = function(t){ S.ui.clienteDetalleTab=t; render(); }
-
-function tabPotencial(c,p){
-  const box = (label,val,big)=>`<div class="panel2 p-4"><div class="kicker">${label}</div><div class="${big?'stat-num':'font-bold text-lg'} mt-1">${val}</div></div>`;
-  return `
-  <div class="grid grid-cols-3 gap-3 mb-4">
-    <div><label>Eventos al año</label><input id="pf_eventosAnio" type="number" min="0" value="${c.eventosAnio??0}" onchange="quickUpdatePotencial('${c.id}')"></div>
-    <div><label>Media entradas/evento</label><input id="pf_mediaEntradas" type="number" min="0" value="${c.mediaEntradas??0}" onchange="quickUpdatePotencial('${c.id}')"></div>
-    <div><label>Precio medio (€)</label><input id="pf_precioMedio" type="number" min="0" step="0.5" value="${c.precioMedio??0}" onchange="quickUpdatePotencial('${c.id}')"></div>
-  </div>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-    ${box('Entradas anuales', numf(p.entradasAnuales))}
-    ${box('Ventas anuales', money(p.ventasAnuales))}
-    ${box('Retorno anual (4%)', money(p.retornoAnual), true)}
-    ${box('Retorno mensual', money(p.retornoMensual))}
-  </div>`;
-}
-window.quickUpdatePotencial = async function(id){
-  const data = {
-    eventosAnio:Number(document.getElementById('pf_eventosAnio').value)||0,
-    mediaEntradas:Number(document.getElementById('pf_mediaEntradas').value)||0,
-    precioMedio:Number(document.getElementById('pf_precioMedio').value)||0
-  };
-  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), data);
-}
-
-function tabEventos(c){
-  const evs = S.eventos.filter(e=>e.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
-  return `
-  <div class="panel2 p-4 mb-4">
-    <div class="font-semibold text-sm mb-2">Añadir evento</div>
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
-      <div class="col-span-2"><label>Nombre del evento</label><input id="ev_nombre"></div>
-      <div><label>Fecha</label><input id="ev_fecha" type="date"></div>
-      <div><label>Entradas previstas</label><input id="ev_entradas" type="number" min="0"></div>
-      <div><label>Precio medio (€)</label><input id="ev_precio" type="number" min="0" step="0.5"></div>
-      <button class="btn btn-accent col-span-2 md:col-span-1" onclick="addEvento('${c.id}')">Añadir</button>
-    </div>
-  </div>
-  <div class="overflow-x-auto">
-  <table>
-    <thead><tr><th>Evento</th><th>Fecha</th><th>Entradas</th><th>Precio</th><th>Ventas previstas</th><th>Retorno previsto</th></tr></thead>
-    <tbody>
-    ${evs.length? evs.map(e=>{ const ventas=(e.entradas||0)*(e.precio||0); const ret=ventas*PCT; return `
-      <tr><td class="font-semibold">${esc(e.nombre)}</td><td>${fdate(e.fecha)}</td><td>${numf(e.entradas)}</td><td>${money(e.precio)}</td><td>${money(ventas)}</td><td>${money(ret)}</td></tr>`;}).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Sin eventos registrados.</td></tr>`}
-    </tbody>
-  </table>
-  </div>`;
-}
-window.addEvento = async function(clienteId){
-  const nombre=document.getElementById('ev_nombre').value.trim();
-  const fecha=document.getElementById('ev_fecha').value;
-  const entradas=Number(document.getElementById('ev_entradas').value)||0;
-  const precio=Number(document.getElementById('ev_precio').value)||0;
-  if(!nombre){ alert('Indica el nombre del evento.'); return; }
-  await S.fb.addDoc(col('crm2_eventos'), {clienteId, nombre, fecha, entradas, precio});
-  render();
-}
 
 function tabHistorial(c){
   const hs = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
@@ -681,13 +635,12 @@ function tabComisionesCliente(c){
   </div>
   <div class="overflow-x-auto">
   <table>
-    <thead><tr><th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Retorno cliente 4%</th><th>Comisión comercial 4%</th></tr></thead>
+    <thead><tr><th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Comisión comercial 4%</th></tr></thead>
     <tbody>
-    ${ks.length? ks.map(k=>`<tr><td class="font-semibold">${esc(k.evento)}</td><td>${numf(k.entradas)}</td><td>${money(k.valorTotal)}</td><td>${money(k.valorTotal*PCT)}</td><td>${money(k.valorTotal*PCT)}</td></tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}
+    ${ks.length? ks.map(k=>`<tr><td class="font-semibold">${esc(k.evento)}</td><td>${numf(k.entradas)}</td><td>${money(k.valorTotal)}</td><td>${money(k.valorTotal*PCT)}</td></tr>`).join('') : `<tr><td colspan="4" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}
     </tbody>
   </table>
-  </div>
-  <p class="text-xs mt-2" style="color:var(--ink-dim)">Retorno cliente y comisión comercial son conceptos independientes: cada uno se calcula al 4% sobre el valor vendido, pero se paga a partes distintas.</p>`;
+  </div>`;
 }
 window.addComision = async function(clienteId){
   const evento=document.getElementById('km_evento').value.trim();
@@ -852,6 +805,7 @@ function processImport(rows){
     personaContacto: get(r,'nombre','persona de contacto','contacto'),
     telefono: get(r,'teléfono','telefono','tel','whatsapp'),
     email: get(r,'email','correo').toLowerCase(),
+    instagram: get(r,'instagram').replace(/^@/,''),
     ciudad: get(r,'ciudad'),
     provincia: get(r,'provincia'),
     tipoCliente: get(r,'tipo de cliente','tipo')||'Otro'
@@ -875,10 +829,9 @@ window.confirmImport = async function(includeDupes){
   for(const r of rows){
     const ref = S.fb.doc(col('crm2_clientes'));
     batch.set(ref, {
-      nombreEmpresa:r.nombreEmpresa, personaContacto:r.personaContacto, telefono:r.telefono, email:r.email,
-      ciudad:r.ciudad, provincia:r.provincia, tipoCliente:r.tipoCliente, estado:'Nuevo',
-      comercialId: isAdmin()? null : S.session.comercialId, fechaAlta:todayISO(),
-      eventosAnio:0, mediaEntradas:0, precioMedio:0
+      nombreEmpresa:r.nombreEmpresa, personaContacto:r.personaContacto, telefono:r.telefono, email:r.email, instagram:r.instagram,
+      ciudad:r.ciudad, provincia:r.provincia, tipoCliente:r.tipoCliente, estado:'Nuevo', prioridad:'BAJO',
+      comercialId: isAdmin()? null : S.session.comercialId, fechaAlta:todayISO()
     });
     count++; total++;
     if(count===450){ await batch.commit(); batch = S.fb.writeBatch(S.db); count=0; }
@@ -898,10 +851,9 @@ window.exportCsv = function(){
   if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
   if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
   const data = cs.map(c=>({
-    Empresa:c.nombreEmpresa, Contacto:c.personaContacto, Telefono:c.telefono, Email:c.email, Ciudad:c.ciudad, Provincia:c.provincia,
+    Empresa:c.nombreEmpresa, Contacto:c.personaContacto, Telefono:c.telefono, Email:c.email, Instagram:c.instagram, Ciudad:c.ciudad, Provincia:c.provincia,
     Tipo:c.tipoCliente, Estado:c.estado, Comercial:nombreComercial(c.comercialId),
-    EventosAnio:c.eventosAnio, MediaEntradas:c.mediaEntradas, PrecioMedio:c.precioMedio,
-    VentasAnuales:c.ventasAnuales, RetornoAnual:c.retornoAnual, Prioridad:c.prioridad
+    VentasRegistradas:c.ventasAnuales, RetornoRegistrado:c.retornoAnual, Prioridad:c.prioridad
   }));
   const csv = Papa.unparse(data);
   const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
