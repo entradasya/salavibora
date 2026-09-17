@@ -58,9 +58,9 @@ const S = {
   fbApp:null, db:null, fb:null,
   config: JSON.parse(localStorage.getItem('ey_fb_config')||'null'),
   session: JSON.parse(localStorage.getItem('ey_session')||'null'),
-  comerciales:[], clientes:[], eventos:[], contactos:[], comisiones:[],
+  comerciales:[], clientes:[], eventos:[], contactos:[], comisiones:[], logs:[],
   listenersOn:false,
-  ui:{ view:'dashboard', clienteFiltro:{q:'',comercial:'',estado:'',tipo:'',prioridad:''}, clienteDetalleId:null, clienteDetalleTab:'comisiones', importStep:0, importRows:[], importDupes:[] }
+  ui:{ view:'dashboard', clienteFiltro:{q:'',comercial:'',estado:'',tipo:'',prioridad:''}, clienteDetalleId:null, clienteDetalleTab:'comisiones', importStep:0, importRows:[], importDupes:[], showPasswordForm:false }
 };
 const PCT = 0.04;
 const money = n => (isFinite(n)?n:0).toLocaleString('es-ES',{style:'currency',currency:'EUR',maximumFractionDigits:0});
@@ -117,6 +117,20 @@ function startListeners(){
   // (crm2_eventos ya no se usa: los eventos/comisiones reales viven en crm2_comisiones)
   S.fb.onSnapshot(col('crm2_contactos'), snap=>{ S.contactos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
   S.fb.onSnapshot(col('crm2_comisiones'), snap=>{ S.comisiones = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_log'), snap=>{ S.logs = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fechaHora||'').localeCompare(a.fechaHora||'')); render(); });
+}
+
+/* ===================== LOG DE ACTIVIDAD ===================== */
+async function logAction(accion, detalle){
+  try{
+    await S.fb.addDoc(col('crm2_log'), {
+      accion, detalle: detalle||'',
+      usuario: (S.session&&(S.session.nombre||S.session.email))||'desconocido',
+      email: (S.session&&S.session.email)||'',
+      role: (S.session&&S.session.role)||'',
+      fechaHora: new Date().toISOString()
+    });
+  }catch(e){ /* si falla el log, no bloqueamos la acción principal */ }
 }
 
 async function ensureAdminBootstrap(){
@@ -205,9 +219,10 @@ window.createAdmin = async function(){
   const email = document.getElementById('bEmail').value.trim().toLowerCase();
   const pass = document.getElementById('bPass').value;
   if(!nombre||!email||!pass){ document.getElementById('bErr').textContent='Rellena todos los campos.'; return; }
-  await S.fb.setDoc(S.fb.doc(col('crm2_users'), uid()), {nombre, email, pass, role:'admin', comercialId:null, creado:todayISO()});
+  const newId = uid();
+  await S.fb.setDoc(S.fb.doc(col('crm2_users'), newId), {nombre, email, pass, role:'admin', comercialId:null, creado:todayISO()});
   bootstrapNeeded = false;
-  S.session = {email, nombre, role:'admin', comercialId:null};
+  S.session = {userId:newId, email, nombre, role:'admin', comercialId:null};
   localStorage.setItem('ey_session', JSON.stringify(S.session));
   render();
 }
@@ -217,9 +232,10 @@ window.doLogin = async function(){
   const snap = await S.fb.getDocs(S.fb.query(col('crm2_users'), S.fb.where('email','==',email)));
   const u = snap.docs.map(d=>({id:d.id,...d.data()})).find(x=>x.pass===pass);
   if(!u){ document.getElementById('lErr').textContent='Email o contraseña incorrectos.'; return; }
-  S.session = {email:u.email, nombre:u.nombre, role:u.role, comercialId:u.comercialId||null};
+  S.session = {userId:u.id, email:u.email, nombre:u.nombre, role:u.role, comercialId:u.comercialId||null};
   localStorage.setItem('ey_session', JSON.stringify(S.session));
   render();
+  logAction('Inicio de sesión','');
 }
 window.doLogout = function(){ S.session=null; localStorage.removeItem('ey_session'); render(); }
 
@@ -242,7 +258,8 @@ function puedeEditar(c){
 function viewApp(){
   const nav = [
     ['dashboard','Panel'],['clientes','Clientes'],['seguimientos','Seguimientos'],
-    ['comisiones','Comisiones'], ...(isAdmin()?[['comerciales','Comerciales'],['importar','Importar / Exportar']]:[])
+    ['comisiones','Comisiones'], ...(isAdmin()?[['comerciales','Comerciales'],['importar','Importar / Exportar']]:[]),
+    ...(isOwner()?[['actividad','Actividad']]:[])
   ];
   return `
   <div class="flex min-h-screen">
@@ -257,6 +274,7 @@ function viewApp(){
       <div class="pt-4 border-t" style="border-color:var(--line)">
         <div class="text-sm font-semibold">${S.session.nombre||S.session.email}</div>
         <div class="text-xs mb-3" style="color:var(--ink-dim)">${isAdmin()?'Administrador':'Comercial'}</div>
+        <button class="btn btn-ghost w-full text-xs mb-2" onclick="openPasswordForm()">Cambiar contraseña</button>
         <button class="btn btn-ghost w-full text-xs" onclick="doLogout()">Cerrar sesión</button>
       </div>
     </aside>
@@ -266,13 +284,50 @@ function viewApp(){
          S.ui.view==='seguimientos' ? viewSeguimientos() :
          S.ui.view==='comisiones' ? viewComisiones() :
          S.ui.view==='comerciales' ? viewComerciales() :
-         S.ui.view==='importar' ? viewImportar() : '' }
+         S.ui.view==='importar' ? viewImportar() :
+         S.ui.view==='actividad' ? viewActividad() : '' }
     </main>
   </div>
   ${S.ui.clienteDetalleId ? modalClienteDetalle() : ''}
   ${S.ui.showComercialForm ? modalComercialForm() : ''}
   ${S.ui.showClienteForm ? modalClienteForm() : ''}
+  ${S.ui.showPasswordForm ? modalPasswordForm() : ''}
   `;
+}
+
+/* ===================== CAMBIAR CONTRASEÑA (propia) ===================== */
+window.openPasswordForm = function(){ S.ui.showPasswordForm = true; render(); }
+window.closePasswordForm = function(){ S.ui.showPasswordForm = false; render(); }
+function modalPasswordForm(){
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closePasswordForm()">
+    <div class="panel p-6 w-full max-w-md mt-4">
+      <div class="flex justify-between items-center mb-4"><div class="font-bold text-lg">Cambiar contraseña</div><button class="btn btn-ghost text-xs" onclick="closePasswordForm()">Cerrar</button></div>
+      <div class="space-y-3">
+        <div><label>Contraseña actual</label><input id="pf_actual" type="password"></div>
+        <div><label>Nueva contraseña</label><input id="pf_nueva" type="password"></div>
+        <div><label>Repetir nueva contraseña</label><input id="pf_repetir" type="password"></div>
+      </div>
+      <div id="pfErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-5" onclick="savePassword()">Guardar contraseña</button>
+    </div>
+  </div>`;
+}
+window.savePassword = async function(){
+  const actual = document.getElementById('pf_actual').value;
+  const nueva = document.getElementById('pf_nueva').value;
+  const repetir = document.getElementById('pf_repetir').value;
+  const err = document.getElementById('pfErr');
+  if(!actual||!nueva||!repetir){ err.textContent='Rellena todos los campos.'; return; }
+  if(nueva!==repetir){ err.textContent='Las contraseñas nuevas no coinciden.'; return; }
+  if(nueva.length<4){ err.textContent='La nueva contraseña es demasiado corta.'; return; }
+  const ref = S.fb.doc(col('crm2_users'), S.session.userId);
+  const snap = await S.fb.getDoc(ref);
+  if(!snap.exists() || snap.data().pass!==actual){ err.textContent='La contraseña actual no es correcta.'; return; }
+  await S.fb.updateDoc(ref, {pass:nueva});
+  logAction('Cambio de contraseña','');
+  S.ui.showPasswordForm=false; render();
+  alert('Contraseña actualizada correctamente.');
 }
 window.setView = function(v){ S.ui.view=v; render(); }
 
@@ -434,7 +489,9 @@ function viewClientes(){
 window.setFiltro = function(k,v){ S.ui.clienteFiltro[k]=v; render(); }
 window.asignarComercialRapido = async function(clienteId,comercialId){
   if(!isAdmin()) return;
+  const c = S.clientes.find(x=>x.id===clienteId);
   await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {comercialId: comercialId||null});
+  logAction('Reasignación de cliente', `${c?c.nombreEmpresa:clienteId} → ${nombreComercial(comercialId)}`);
 }
 function nombreComercial(id){ const c = S.comerciales.find(x=>x.id===id); return c?c.nombre:'Sin asignar'; }
 window.openCliente = function(id){
@@ -506,14 +563,16 @@ window.saveCliente = async function(id){
     data.comercialId = S.session.comercialId; // se reclama/mantiene al guardar
   }
 
-  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), data); }
-  else{ data.fechaAlta = todayISO(); await S.fb.addDoc(col('crm2_clientes'), data); }
+  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), data); logAction('Cliente editado', data.nombreEmpresa); }
+  else{ data.fechaAlta = todayISO(); await S.fb.addDoc(col('crm2_clientes'), data); logAction('Cliente creado', data.nombreEmpresa); }
   S.ui.showClienteForm = null; render();
 }
 window.deleteCliente = async function(id){
   if(!isAdmin()){ alert('Solo el administrador puede eliminar clientes.'); return; }
   if(!confirm('¿Eliminar este cliente? Esta acción no se puede deshacer.')) return;
+  const c = S.clientes.find(x=>x.id===id);
   await S.fb.deleteDoc(S.fb.doc(col('crm2_clientes'), id));
+  logAction('Cliente eliminado', c?c.nombreEmpresa:id);
   S.ui.clienteDetalleId=null; render();
 }
 window.toggleSelectCliente = function(id, checked){
@@ -545,6 +604,7 @@ window.deleteSelectedClientes = async function(){
     if(count===450){ await batch.commit(); batch = S.fb.writeBatch(S.db); count=0; }
   }
   if(count>0) await batch.commit();
+  logAction('Eliminación múltiple de clientes', `${ids.length} cliente(s)`);
   sel.clear();
   render();
 }
@@ -618,6 +678,8 @@ window.addContacto = async function(clienteId){
   await S.fb.addDoc(col('crm2_contactos'), {clienteId, fecha, tipo, resultado, comentarios, proximoPaso, proximoSeguimiento});
   if(proximoSeguimiento){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {proximoSeguimiento, ultimoContacto:fecha}); }
   else { await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {ultimoContacto:fecha}); }
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Contacto registrado', `${c?c.nombreEmpresa:clienteId} · ${tipo} · ${resultado}`);
   render();
 }
 
@@ -648,6 +710,8 @@ window.addComision = async function(clienteId){
   const valorTotal=Number(document.getElementById('km_valor').value)||0;
   if(!evento){ alert('Indica el evento.'); return; }
   await S.fb.addDoc(col('crm2_comisiones'), {clienteId, evento, entradas, valorTotal, fecha:todayISO()});
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Comisión registrada', `${c?c.nombreEmpresa:clienteId} · ${evento} · ${money(valorTotal)}`);
   render();
 }
 
@@ -662,7 +726,7 @@ function viewSeguimientos(){
     <div class="panel p-4 mb-4">
       <div class="font-bold mb-3" style="${color?`color:${color}`:''}">${label} (${list.length})</div>
       <div class="overflow-x-auto"><table>
-        <thead><tr><th>Cliente</th><th>Comercial</th><th>Último contacto</th><th>Próxima acción</th><th>Fecha</th></tr></thead>
+        <thead><tr><th>Cliente</th><th>Comercial</th><th>Último contacto</th><th>Próxima acción</th><th>Fecha</th><th></th></tr></thead>
         <tbody>${list.length? list.map(c=>{
           const ultimo = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))[0];
           return `<tr class="row" onclick="openCliente('${c.id}')">
@@ -670,8 +734,9 @@ function viewSeguimientos(){
             <td style="color:var(--ink-dim)">${nombreComercial(c.comercialId)}</td>
             <td>${fdate(c.ultimoContacto)}</td>
             <td>${esc(ultimo?.proximoPaso||'-')}</td>
-            <td>${fdate(c.proximoSeguimiento)}</td></tr>`;
-        }).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Nada aquí.</td></tr>`}</tbody>
+            <td>${fdate(c.proximoSeguimiento)}</td>
+            <td onclick="event.stopPropagation()"><button class="btn btn-ghost text-xs" onclick="marcarSeguimientoHecho('${c.id}')">✓ Marcar hecho</button></td></tr>`;
+        }).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Nada aquí.</td></tr>`}</tbody>
       </table></div>
     </div>`;
   return `
@@ -681,6 +746,13 @@ function viewSeguimientos(){
   ${tabla(hoyList,'Hoy','#e0a53e')}
   ${tabla(proximos,'Próximos')}
   `;
+}
+window.marcarSeguimientoHecho = async function(id){
+  const c = S.clientes.find(x=>x.id===id);
+  if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; }
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), {proximoSeguimiento:'', ultimoContacto:todayISO()});
+  logAction('Seguimiento marcado como hecho', c?c.nombreEmpresa:id);
+  render();
 }
 
 /* ===================== COMISIONES ===================== */
@@ -723,11 +795,15 @@ function viewComerciales(){
         <td class="font-semibold">${esc(cm.nombre)}</td><td>${esc(cm.email)}</td><td>${esc(cm.telefono||'-')}</td>
         <td>${fdate(cm.fechaIncorporacion)}</td>
         <td><span class="badge" style="background:${cm.estado==='activo'?'#26332c':'#332626'};color:${cm.estado==='activo'?'#3ecf8e':'#e0603e'}">${cm.estado}</span></td>
-        <td>${n}</td>
+        <td><span style="cursor:pointer;text-decoration:underline;color:var(--info)" onclick="verClientesDeComercial('${cm.id}')">${n}</span></td>
         <td><button class="btn btn-ghost text-xs" onclick="openComercialForm('${cm.id}')">Editar</button></td>
       </tr>`;
     }).join('') : `<tr><td colspan="7" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}</tbody>
   </table></div></div>`;
+}
+window.verClientesDeComercial = function(comercialId){
+  S.ui.clienteFiltro = {q:'',comercial:comercialId,estado:'',tipo:'',prioridad:''};
+  S.ui.view='clientes'; render();
 }
 window.openComercialForm = function(id){ S.ui.showComercialForm = id || 'new'; render(); }
 window.closeComercialForm = function(){ S.ui.showComercialForm = null; render(); }
@@ -744,7 +820,7 @@ function modalComercialForm(){
         <div><label>Teléfono</label><input id="cm_telefono" value="${esc(cm.telefono)}"></div>
         <div><label>Fecha de incorporación</label><input id="cm_fecha" type="date" value="${cm.fechaIncorporacion||todayISO()}"></div>
         <div><label>Estado</label><select id="cm_estado"><option value="activo" ${cm.estado==='activo'?'selected':''}>Activo</option><option value="inactivo" ${cm.estado==='inactivo'?'selected':''}>Inactivo</option></select></div>
-        ${!editing?`<div class="pt-2 border-t" style="border-color:var(--line)"><div class="kicker mb-2">Acceso al CRM</div><label>Contraseña de acceso</label><input id="cm_pass" type="password"></div>`:''}
+        ${!editing?`<div class="pt-2 border-t" style="border-color:var(--line)"><div class="kicker mb-2">Acceso al CRM</div><label>Contraseña de acceso inicial</label><input id="cm_pass" type="password" placeholder="Si la dejas en blanco, se usa su nombre"><p class="text-xs mt-1" style="color:var(--ink-dim)">El comercial podrá cambiarla desde su cuenta en cualquier momento.</p></div>`:''}
       </div>
       <button class="btn btn-accent w-full mt-5" onclick="saveComercial(${editing?`'${cm.id}'`:'null'})">Guardar</button>
     </div>
@@ -754,11 +830,12 @@ window.saveComercial = async function(id){
   const g = k=>document.getElementById('cm_'+k).value;
   const data = {nombre:g('nombre').trim(), email:g('email').trim().toLowerCase(), telefono:g('telefono').trim(), fechaIncorporacion:g('fecha'), estado:g('estado')};
   if(!data.nombre||!data.email){ alert('Nombre y email son obligatorios.'); return; }
-  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), data); }
+  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), data); logAction('Comercial editado', data.nombre); }
   else{
     const ref = await S.fb.addDoc(col('crm2_comerciales'), data);
-    const pass = g('pass') || Math.random().toString(36).slice(2,8);
+    const pass = g('pass') || data.nombre.toLowerCase().replace(/\s+/g,'');
     await S.fb.setDoc(S.fb.doc(col('crm2_users'), uid()), {nombre:data.nombre, email:data.email, pass, role:'comercial', comercialId:ref.id, creado:todayISO()});
+    logAction('Comercial creado', data.nombre);
   }
   S.ui.showComercialForm=null; render();
 }
@@ -837,12 +914,14 @@ window.confirmImport = async function(includeDupes){
     if(count===450){ await batch.commit(); batch = S.fb.writeBatch(S.db); count=0; }
   }
   if(count>0) await batch.commit();
+  logAction('Importación CSV', `${total} clientes importados`);
   alert(`${total} clientes importados correctamente.`);
   document.getElementById('importResult').innerHTML='';
   S.ui.importRows=[];
 }
 window.exportCsv = function(){
-  if(!isOwner()){ alert('No tienes permiso para descargar la base de datos.'); return; }
+  if(!isOwner()){ logAction('Intento de descarga bloqueado', 'Sin permiso'); alert('No tienes permiso para descargar la base de datos.'); return; }
+  logAction('Exportación CSV', '');
   const f = S.ui.clienteFiltro;
   let cs = misClientes().map(c=>({...c,...calcPotencial(c)}));
   if(f.q) cs = cs.filter(c=> [c.nombreEmpresa,c.personaContacto,c.telefono,c.email,c.ciudad].join(' ').toLowerCase().includes(f.q.toLowerCase()));
@@ -858,6 +937,24 @@ window.exportCsv = function(){
   const csv = Papa.unparse(data);
   const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entradasya_clientes.csv'; a.click();
+}
+
+/* ===================== ACTIVIDAD (solo admin principal) ===================== */
+function viewActividad(){
+  if(!isOwner()) return '<p style="color:var(--ink-dim)">No tienes acceso a esta sección.</p>';
+  const logs = S.logs.slice(0,300);
+  return `
+  <h2 class="text-xl font-bold mb-1">Actividad</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Registro de movimientos de todos los usuarios (últimos 300).</p>
+  <div class="panel p-4"><div class="overflow-x-auto"><table>
+    <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Rol</th><th>Acción</th><th>Detalle</th></tr></thead>
+    <tbody>${logs.length? logs.map(l=>`<tr>
+      <td style="color:var(--ink-dim)">${l.fechaHora? new Date(l.fechaHora).toLocaleString('es-ES') : '-'}</td>
+      <td class="font-semibold">${esc(l.usuario)}</td>
+      <td>${esc(l.role==='admin'?'Administrador':'Comercial')}</td>
+      <td>${esc(l.accion)}</td>
+      <td style="color:var(--ink-dim)">${esc(l.detalle||'-')}</td></tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Sin actividad registrada todavía.</td></tr>`}</tbody>
+  </table></div></div>`;
 }
 
 /* ===================== INICIO ===================== */
