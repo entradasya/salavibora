@@ -453,6 +453,7 @@ function viewClientes(){
     </div>
     <div class="flex gap-2">
       ${isAdmin() && sel.size ? `<button class="btn btn-danger" onclick="deleteSelectedClientes()">Eliminar seleccionados (${sel.size})</button>` : ''}
+      <label class="btn btn-ghost" style="cursor:pointer">📤 Subir ficha comercial (.txt)<input type="file" accept=".txt" style="display:none" onchange="importarFichaGlobal(event)"></label>
       <button class="btn btn-accent" onclick="openClienteForm()">+ Nuevo cliente</button>
     </div>
   </div>
@@ -500,6 +501,96 @@ window.openCliente = function(id){
   S.ui.clienteDetalleId=id; S.ui.clienteDetalleTab='comisiones'; render();
 }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+/* ---- Importar ficha comercial (.txt con formato ETIQUETA: valor) ---- */
+function parsearFichaTxt(texto){
+  const campos = {};
+  texto.split(/\r?\n/).forEach(linea=>{
+    const m = linea.match(/^\s*([A-ZÁÉÍÓÚÑ_]+)\s*:\s*(.*)$/);
+    if(!m) return;
+    const clave = m[1].trim().toUpperCase();
+    const valor = m[2].trim().replace(/\s*\|\s*/g, '\n');
+    campos[clave] = valor;
+  });
+  return {
+    nombreEmpresa: campos['EMPRESA']||'',
+    naturaleza: campos['NATURALEZA']||'',
+    tamano: campos['TAMANO']||campos['TAMAÑO']||'',
+    telefono: campos['TELEFONO']||campos['TELÉFONO']||'',
+    email: campos['EMAIL']||'',
+    instagram: (campos['INSTAGRAM']||'').replace(/^@/,''),
+    web: campos['WEB']||'',
+    ciudad: campos['CIUDAD']||'',
+    provincia: campos['PROVINCIA']||'',
+    actividad: campos['ACTIVIDAD']||'',
+    situacion: campos['SITUACION']||campos['SITUACIÓN']||'',
+    oportunidad: campos['OPORTUNIDAD']||'',
+    puntoEntrada: campos['PUNTO_ENTRADA']||'',
+    observaciones: campos['OBSERVACIONES']||''
+  };
+}
+
+// Botón global en Clientes: sube una ficha y crea/actualiza el cliente correspondiente
+window.importarFichaGlobal = function(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(e){
+    const d = parsearFichaTxt(e.target.result);
+    if(!d.nombreEmpresa){ alert('El archivo no tiene una línea "EMPRESA: ...", no se puede identificar el cliente.'); return; }
+    const existente = S.clientes.find(c => c.nombreEmpresa.trim().toLowerCase() === d.nombreEmpresa.trim().toLowerCase());
+    const investigacion = { naturaleza:d.naturaleza, tamano:d.tamano, actividad:d.actividad, situacion:d.situacion, oportunidad:d.oportunidad, puntoEntrada:d.puntoEntrada, observaciones:d.observaciones, fecha:todayISO() };
+    if(existente){
+      if(!confirm(`Ya existe "${existente.nombreEmpresa}" en el CRM. ¿Actualizar su ficha de investigación con este archivo?`)){ event.target.value=''; return; }
+      const patch = { investigacion };
+      // Solo rellenamos datos de contacto si el cliente los tiene vacíos, para no pisar nada ya trabajado
+      if(!existente.telefono && d.telefono) patch.telefono = d.telefono;
+      if(!existente.email && d.email) patch.email = d.email;
+      if(!existente.instagram && d.instagram) patch.instagram = d.instagram;
+      if(!existente.web && d.web) patch.web = d.web;
+      if(!existente.ciudad && d.ciudad) patch.ciudad = d.ciudad;
+      if(!existente.provincia && d.provincia) patch.provincia = d.provincia;
+      await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), existente.id), patch);
+      logAction('Ficha importada (actualiza cliente existente)', existente.nombreEmpresa);
+      S.ui.clienteDetalleId = existente.id; S.ui.clienteDetalleTab='investigacion';
+    } else {
+      const nuevo = {
+        nombreEmpresa: d.nombreEmpresa, personaContacto:'', tipoCliente:'Otro',
+        telefono:d.telefono, whatsapp:'', email:d.email, instagram:d.instagram, web:d.web,
+        estado:'Nuevo', prioridad:'BAJO', ciudad:d.ciudad, provincia:d.provincia,
+        comercialId: isAdmin()? null : S.session.comercialId,
+        fechaAlta: todayISO(), investigacion
+      };
+      const ref = await S.fb.addDoc(col('crm2_clientes'), nuevo);
+      logAction('Ficha importada (cliente nuevo)', d.nombreEmpresa);
+      S.ui.clienteDetalleId = ref.id; S.ui.clienteDetalleTab='investigacion';
+    }
+    event.target.value = '';
+    render();
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+// Dentro de la ficha de un cliente ya abierto: sube un archivo y rellena el formulario de Investigación (sin guardar todavía)
+window.importarFichaCliente = function(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const d = parsearFichaTxt(e.target.result);
+    const set = (id,val)=>{ const el=document.getElementById(id); if(el && val) el.value = val; };
+    set('inv_naturaleza', d.naturaleza);
+    set('inv_tamano', d.tamano);
+    set('inv_actividad', d.actividad);
+    set('inv_situacion', d.situacion);
+    set('inv_oportunidad', d.oportunidad);
+    set('inv_puntoEntrada', d.puntoEntrada);
+    set('inv_observaciones', d.observaciones);
+    event.target.value = '';
+    alert('Campos rellenados desde el archivo. Revísalos y pulsa "Guardar investigación" para confirmarlos.');
+  };
+  reader.readAsText(file, 'utf-8');
+}
 
 /* ---- Formulario nuevo/editar cliente ---- */
 window.openClienteForm = function(id){
@@ -721,6 +812,7 @@ function tabInvestigacion(c){
   const inv = c.investigacion || {};
   return `
   <div>
+    <label class="btn btn-ghost text-xs mb-3" style="cursor:pointer;display:inline-block">📤 Rellenar desde archivo (.txt)<input type="file" accept=".txt" style="display:none" onchange="importarFichaCliente(event)"></label>
     ${inv.fecha ? `<div class="text-xs mb-3" style="color:var(--ink-dim)">Última investigación registrada: ${esc(inv.fecha)}</div>` : `<div class="text-xs mb-3" style="color:var(--ink-dim)">Sin investigación registrada todavía.</div>`}
     <div class="space-y-3">
       <div><label>Naturaleza / tipo de entidad</label><input id="inv_naturaleza" placeholder="Ej: asociación sin ánimo de lucro, agencia, sala..." value="${esc(inv.naturaleza)}"></div>
