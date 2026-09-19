@@ -471,7 +471,7 @@ function viewClientes(){
       ${cs.length? cs.map(c=>`
         <tr class="row" onclick="openCliente('${c.id}')">
           ${isAdmin()?`<td onclick="event.stopPropagation()" style="padding:.5rem;text-align:center"><input type="checkbox" onclick="toggleSelectCliente('${c.id}',this.checked)" ${sel.has(c.id)?'checked':''}></td>`:''}
-          <td class="font-semibold">${esc(c.nombreEmpresa)}</td>
+          <td class="font-semibold">${esc(c.nombreEmpresa)} ${c.investigacion?'<span title="Investigación comercial registrada" style="color:var(--info)">🔎</span>':''}</td>
           <td style="color:var(--ink-dim)">${esc(c.personaContacto||'-')}</td>
           <td style="color:var(--ink-dim)">${esc(c.ciudad||'-')}</td>
           <td>${esc(c.tipoCliente||'-')}</td>
@@ -614,7 +614,7 @@ function modalClienteDetalle(){
   const c = S.clientes.find(x=>x.id===S.ui.clienteDetalleId);
   if(!c){ S.ui.clienteDetalleId=null; return ''; }
   const p = calcPotencial(c);
-  const tabs = [['comisiones','Eventos/Comisiones'],['historial','Historial']];
+  const tabs = [['comisiones','Eventos/Comisiones'],['historial','Historial'],['investigacion','Investigación comercial']];
   return `
   <div class="modal-bg" onclick="if(event.target===this) closeClienteDetalle()">
     <div class="panel p-6 w-full max-w-3xl mt-4">
@@ -637,7 +637,7 @@ function modalClienteDetalle(){
       <div class="flex gap-1 mb-4 border-b pb-2" style="border-color:var(--line)">
         ${tabs.map(([k,l])=>`<div class="tab ${S.ui.clienteDetalleTab===k?'active':''}" onclick="setDetalleTab('${k}')">${l}</div>`).join('')}
       </div>
-      ${ S.ui.clienteDetalleTab==='historial' ? tabHistorial(c) : tabComisionesCliente(c) }
+      ${ S.ui.clienteDetalleTab==='historial' ? tabHistorial(c) : S.ui.clienteDetalleTab==='investigacion' ? tabInvestigacion(c) : tabComisionesCliente(c) }
     </div>
   </div>`;
 }
@@ -716,6 +716,37 @@ window.addComision = async function(clienteId){
 }
 
 /* ===================== SEGUIMIENTOS ===================== */
+/* ---- Investigación comercial (ficha de investigación por cliente) ---- */
+function tabInvestigacion(c){
+  const inv = c.investigacion || {};
+  return `
+  <div>
+    ${inv.fecha ? `<div class="text-xs mb-3" style="color:var(--ink-dim)">Última investigación registrada: ${esc(inv.fecha)}</div>` : `<div class="text-xs mb-3" style="color:var(--ink-dim)">Sin investigación registrada todavía.</div>`}
+    <div class="space-y-3">
+      <div><label>Naturaleza / tipo de entidad</label><input id="inv_naturaleza" placeholder="Ej: asociación sin ánimo de lucro, agencia, sala..." value="${esc(inv.naturaleza)}"></div>
+      <div><label>Tamaño</label><input id="inv_tamano" placeholder="Ej: 2-9 empleados, aforo 300..." value="${esc(inv.tamano)}"></div>
+      <div><label>Actividad real confirmada</label><textarea id="inv_actividad" rows="4" placeholder="Qué hace, eventos que organiza, con qué frecuencia...">${esc(inv.actividad)}</textarea></div>
+      <div><label>Situación actual (plataforma/ventas)</label><textarea id="inv_situacion" rows="2">${esc(inv.situacion)}</textarea></div>
+      <div><label>Oportunidad para EntradasYa</label><textarea id="inv_oportunidad" rows="2">${esc(inv.oportunidad)}</textarea></div>
+      <div><label>Punto de entrada recomendado</label><textarea id="inv_puntoEntrada" rows="2">${esc(inv.puntoEntrada)}</textarea></div>
+      <div><label>Observaciones / datos pendientes de confirmar</label><textarea id="inv_observaciones" rows="2">${esc(inv.observaciones)}</textarea></div>
+    </div>
+    <button class="btn btn-accent w-full mt-4" onclick="saveInvestigacion('${c.id}')">Guardar investigación</button>
+  </div>`;
+}
+window.saveInvestigacion = async function(clienteId){
+  const g = k => document.getElementById('inv_'+k).value.trim();
+  const investigacion = {
+    naturaleza: g('naturaleza'), tamano: g('tamano'), actividad: g('actividad'),
+    situacion: g('situacion'), oportunidad: g('oportunidad'), puntoEntrada: g('puntoEntrada'),
+    observaciones: g('observaciones'), fecha: todayISO()
+  };
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), { investigacion });
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Investigación comercial guardada', c?c.nombreEmpresa:clienteId);
+  render();
+}
+
 function viewSeguimientos(){
   const hoy = todayISO();
   const cs = misClientes().filter(c=>c.proximoSeguimiento);
