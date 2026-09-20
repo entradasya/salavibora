@@ -582,6 +582,1054 @@ window.importarFichaCliente = function(event){
   const file = event.target.files[0];
   if(!file) return;
   const reader = new FileReader();
+  reader.onload = async function(e){
+    const d = parsearFichaTxt(e.target.result);
+    // Rellena la pestaña de investigación en pantalla (para que se vea al momento)...
+    const set = (id,val)=>{ const el=document.getElementById(id); if(el && val) el.value = val; };
+    set('inv_naturaleza', d.naturaleza);
+    set('inv_tamano', d.tamano);
+    set('inv_actividad', d.actividad);
+    set('inv_situacion', d.situacion);
+    set('inv_oportunidad', d.oportunidad);
+    set('inv_puntoEntrada', d.puntoEntrada);
+    set('inv_observaciones', d.observaciones);
+    // ...y guarda YA en Firestore tanto la investigación como TODOS los datos de contacto del cliente
+    const clienteId = S.ui.clienteDetalleId;
+    const investigacion = { naturaleza:d.naturaleza, tamano:d.tamano, actividad:d.actividad, situacion:d.situacion, oportunidad:d.oportunidad, puntoEntrada:d.puntoEntrada, observaciones:d.observaciones, fecha:todayISO() };
+    const patch = { investigacion };
+    if(d.personaContacto) patch.personaContacto = d.personaContacto;
+    if(d.tipoCliente) patch.tipoCliente = d.tipoCliente;
+    if(d.telefono) patch.telefono = d.telefono;
+    if(d.whatsapp) patch.whatsapp = d.whatsapp;
+    if(d.email) patch.email = d.email;
+    if(d.instagram) patch.instagram = d.instagram;
+    if(d.web) patch.web = d.web;
+    if(d.ciudad) patch.ciudad = d.ciudad;
+    if(d.provincia) patch.provincia = d.provincia;
+    await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), patch);
+    const c = S.clientes.find(x=>x.id===clienteId);
+    logAction('Ficha importada desde la ficha del cliente (datos de contacto + investigación)', c?c.nombreEmpresa:clienteId);
+    event.target.value = '';
+    render();
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+/* ---- Formulario nuevo/editar cliente ---- */
+window.openClienteForm = function(id){
+  if(id){ const c = S.clientes.find(x=>x.id===id); if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; } }
+  S.ui.showClienteForm = id || 'new'; render();
+}
+window.closeClienteForm = function(){ S.ui.showClienteForm = null; render(); }
+function modalClienteForm(){
+  const editing = S.ui.showClienteForm!=='new';
+  const c = editing ? S.clientes.find(x=>x.id===S.ui.showClienteForm) : {};
+  const comercialDefault = isAdmin() ? (c.comercialId||'') : S.session.comercialId;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closeClienteForm()">
+    <div class="panel p-6 w-full max-w-xl mt-4">
+      <div class="flex justify-between items-center mb-4">
+        <div class="font-bold text-lg">${editing?'Editar cliente':'Nuevo cliente'}</div>
+        <button class="btn btn-ghost text-xs" onclick="closeClienteForm()">Cerrar</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2"><label>Nombre de empresa / sala / promotora *</label><input id="cf_nombreEmpresa" value="${esc(c.nombreEmpresa)}"></div>
+        <div><label>Persona de contacto</label><input id="cf_personaContacto" value="${esc(c.personaContacto)}"></div>
+        <div><label>Tipo de cliente</label><select id="cf_tipoCliente">${TIPOS.map(t=>`<option ${c.tipoCliente===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        <div><label>Teléfono</label><input id="cf_telefono" value="${esc(c.telefono)}"></div>
+        <div><label>WhatsApp</label><input id="cf_whatsapp" value="${esc(c.whatsapp)}"></div>
+        <div><label>Email</label><input id="cf_email" value="${esc(c.email)}"></div>
+        <div><label>Instagram</label><input id="cf_instagram" placeholder="@usuario" value="${esc(c.instagram)}"></div>
+        <div><label>Web</label><input id="cf_web" placeholder="https://" value="${esc(c.web)}"></div>
+        <div><label>Estado comercial</label><select id="cf_estado">${ESTADOS.map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}</select></div>
+        <div><label>Prioridad</label><select id="cf_prioridad">${PRIORIDADES.map(p=>`<option ${(c.prioridad||'BAJO')===p?'selected':''}>${p}</option>`).join('')}</select></div>
+        <div><label>Ciudad / Población</label><input id="cf_ciudad" value="${esc(c.ciudad)}"></div>
+        <div><label>Provincia</label><input id="cf_provincia" value="${esc(c.provincia)}"></div>
+        ${isAdmin()?`<div class="col-span-2"><label>Comercial asignado</label><select id="cf_comercialId"><option value="">Sin asignar</option>${S.comerciales.map(cm=>`<option value="${cm.id}" ${comercialDefault===cm.id?'selected':''}>${esc(cm.nombre)}</option>`).join('')}</select></div>`:''}
+      </div>
+      <button class="btn btn-accent w-full mt-5" onclick="saveCliente(${editing?`'${c.id}'`:'null'})">Guardar cliente</button>
+    </div>
+  </div>`;
+}
+window.saveCliente = async function(id){
+  const g = k=>document.getElementById('cf_'+k).value;
+  const data = {
+    nombreEmpresa: g('nombreEmpresa').trim(), personaContacto:g('personaContacto').trim(),
+    tipoCliente:g('tipoCliente'), telefono:g('telefono').trim(), whatsapp:g('whatsapp').trim(),
+    email:g('email').trim().toLowerCase(), instagram:g('instagram').trim().replace(/^@/,''),
+    web:g('web').trim(),
+    estado:g('estado'), prioridad:g('prioridad'), ciudad:g('ciudad').trim(), provincia:g('provincia').trim(),
+    comercialId: isAdmin()? (document.getElementById('cf_comercialId').value||null) : S.session.comercialId
+  };
+  if(!data.nombreEmpresa){ alert('El nombre de empresa es obligatorio.'); return; }
+
+  if(!isAdmin()){
+    if(id){
+      // Comprobación anti-carrera: releemos el documento justo antes de guardar por si
+      // otro comercial lo ha reclamado entretanto.
+      const fresh = await S.fb.getDoc(S.fb.doc(col('crm2_clientes'), id));
+      const freshData = fresh.exists() ? fresh.data() : null;
+      if(!freshData || (freshData.comercialId && freshData.comercialId!==S.session.comercialId)){
+        alert('Este contacto acaba de ser asignado a otro comercial. Se han descartado tus cambios.');
+        S.ui.showClienteForm = null; render(); return;
+      }
+    }
+    data.comercialId = S.session.comercialId; // se reclama/mantiene al guardar
+  }
+
+  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), data); logAction('Cliente editado', data.nombreEmpresa); }
+  else{ data.fechaAlta = todayISO(); await S.fb.addDoc(col('crm2_clientes'), data); logAction('Cliente creado', data.nombreEmpresa); }
+  S.ui.showClienteForm = null; render();
+}
+window.deleteCliente = async function(id){
+  if(!isAdmin()){ alert('Solo el administrador puede eliminar clientes.'); return; }
+  if(!confirm('¿Eliminar este cliente? Esta acción no se puede deshacer.')) return;
+  const c = S.clientes.find(x=>x.id===id);
+  await S.fb.deleteDoc(S.fb.doc(col('crm2_clientes'), id));
+  logAction('Cliente eliminado', c?c.nombreEmpresa:id);
+  S.ui.clienteDetalleId=null; render();
+}
+window.toggleSelectCliente = function(id, checked){
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  if(checked) sel.add(id); else sel.delete(id);
+  render();
+}
+window.toggleSelectAllClientes = function(checked){
+  const f = S.ui.clienteFiltro;
+  let cs = misClientes();
+  if(f.q) cs = cs.filter(c=> [c.nombreEmpresa,c.personaContacto,c.telefono,c.email,c.ciudad].join(' ').toLowerCase().includes(f.q.toLowerCase()));
+  if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
+  if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
+  if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
+  if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  if(checked) cs.forEach(c=>sel.add(c.id)); else cs.forEach(c=>sel.delete(c.id));
+  render();
+}
+window.deleteSelectedClientes = async function(){
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  if(!sel.size) return;
+  if(!confirm(`¿Eliminar ${sel.size} cliente(s) seleccionados? Esta acción no se puede deshacer.`)) return;
+  const ids = Array.from(sel);
+  let batch = S.fb.writeBatch(S.db); let count=0;
+  for(const id of ids){
+    batch.delete(S.fb.doc(col('crm2_clientes'), id));
+    count++;
+    if(count===450){ await batch.commit(); batch = S.fb.writeBatch(S.db); count=0; }
+  }
+  if(count>0) await batch.commit();
+  logAction('Eliminación múltiple de clientes', `${ids.length} cliente(s)`);
+  sel.clear();
+  render();
+}
+
+/* ---- Detalle de cliente (modal con tabs) ---- */
+function modalClienteDetalle(){
+  const c = S.clientes.find(x=>x.id===S.ui.clienteDetalleId);
+  if(!c){ S.ui.clienteDetalleId=null; return ''; }
+  const p = calcPotencial(c);
+  const tabs = [['comisiones','Eventos/Comisiones'],['historial','Historial'],['investigacion','Investigación comercial']];
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closeClienteDetalle()">
+    <div class="panel p-6 w-full max-w-3xl mt-4">
+      <div class="flex justify-between items-start mb-1">
+        <div>
+          <div class="font-bold text-lg">${esc(c.nombreEmpresa)}</div>
+          <div class="text-sm" style="color:var(--ink-dim)">${esc(c.tipoCliente||'-')} · ${esc(c.ciudad||'-')} ${c.provincia?', '+esc(c.provincia):''} · ${nombreComercial(c.comercialId)}</div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost text-xs" onclick="openClienteForm('${c.id}')">Editar</button>
+          ${isAdmin()?`<button class="btn btn-danger text-xs" onclick="deleteCliente('${c.id}')">Eliminar</button>`:''}
+          <button class="btn btn-ghost text-xs" onclick="closeClienteDetalle()">Cerrar</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-3 text-xs mt-2 mb-4" style="color:var(--ink-dim)">
+        <span>${esc(c.personaContacto||'-')}</span><span>·</span><span>${esc(c.telefono||'-')}</span><span>·</span><span>${esc(c.email||'-')}</span>${c.instagram?`<span>·</span><span>@${esc(c.instagram)}</span>`:''}
+        <span class="badge ml-1" style="background:${estadoColor(c.estado)}22;color:${estadoColor(c.estado)}">${esc(c.estado||'-')}</span>
+        <span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad||'-'}</span>
+      </div>
+      <div class="flex gap-1 mb-4 border-b pb-2" style="border-color:var(--line)">
+        ${tabs.map(([k,l])=>`<div class="tab ${S.ui.clienteDetalleTab===k?'active':''}" onclick="setDetalleTab('${k}')">${l}</div>`).join('')}
+      </div>
+      ${ S.ui.clienteDetalleTab==='historial' ? tabHistorial(c) : S.ui.clienteDetalleTab==='investigacion' ? tabInvestigacion(c) : tabComisionesCliente(c) }
+    </div>
+  </div>`;
+}
+window.closeClienteDetalle = function(){ S.ui.clienteDetalleId=null; render(); }
+window.setDetalleTab = function(t){ S.ui.clienteDetalleTab=t; render(); }
+
+function tabHistorial(c){
+  const hs = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  return `
+  <div class="panel2 p-4 mb-4">
+    <div class="font-semibold text-sm mb-2">Registrar contacto</div>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+      <div><label>Fecha</label><input id="hc_fecha" type="date" value="${todayISO()}"></div>
+      <div><label>Tipo de contacto</label><select id="hc_tipo">${TIPOS_CONTACTO.map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div><label>Resultado</label><select id="hc_resultado">${RESULTADOS.map(r=>`<option>${r}</option>`).join('')}</select></div>
+      <div class="col-span-2 md:col-span-3"><label>Comentarios</label><textarea id="hc_comentarios" rows="2"></textarea></div>
+      <div><label>Próximo paso</label><input id="hc_proximoPaso"></div>
+      <div><label>Fecha próximo seguimiento</label><input id="hc_proximoSeguimiento" type="date"></div>
+      <button class="btn btn-accent self-end" onclick="addContacto('${c.id}')">Guardar</button>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Resultado</th><th>Comentarios</th><th>Próximo paso</th><th>Próx. seguim.</th></tr></thead>
+    <tbody>
+    ${hs.length? hs.map(h=>`<tr><td>${fdate(h.fecha)}</td><td>${esc(h.tipo)}</td><td>${esc(h.resultado)}</td><td style="max-width:220px">${esc(h.comentarios||'-')}</td><td>${esc(h.proximoPaso||'-')}</td><td>${fdate(h.proximoSeguimiento)}</td></tr>`).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Sin contactos registrados.</td></tr>`}
+    </tbody>
+  </table>
+  </div>`;
+}
+window.addContacto = async function(clienteId){
+  const fecha=document.getElementById('hc_fecha').value||todayISO();
+  const tipo=document.getElementById('hc_tipo').value;
+  const resultado=document.getElementById('hc_resultado').value;
+  const comentarios=document.getElementById('hc_comentarios').value.trim();
+  const proximoPaso=document.getElementById('hc_proximoPaso').value.trim();
+  const proximoSeguimiento=document.getElementById('hc_proximoSeguimiento').value;
+  await S.fb.addDoc(col('crm2_contactos'), {clienteId, fecha, tipo, resultado, comentarios, proximoPaso, proximoSeguimiento});
+  if(proximoSeguimiento){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {proximoSeguimiento, ultimoContacto:fecha}); }
+  else { await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {ultimoContacto:fecha}); }
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Contacto registrado', `${c?c.nombreEmpresa:clienteId} · ${tipo} · ${resultado}`);
+  render();
+}
+
+function tabComisionesCliente(c){
+  const ks = S.comisiones.filter(k=>k.clienteId===c.id);
+  return `
+  <div class="panel2 p-4 mb-4">
+    <div class="font-semibold text-sm mb-2">Registrar venta / comisión</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+      <div><label>Evento</label><input id="km_evento" placeholder="Nombre del evento"></div>
+      <div><label>Entradas vendidas</label><input id="km_entradas" type="number" min="0"></div>
+      <div><label>Valor total vendido (€)</label><input id="km_valor" type="number" min="0" step="0.01"></div>
+      <button class="btn btn-accent" onclick="addComision('${c.id}')">Registrar</button>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table>
+    <thead><tr><th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Comisión comercial 4%</th></tr></thead>
+    <tbody>
+    ${ks.length? ks.map(k=>`<tr><td class="font-semibold">${esc(k.evento)}</td><td>${numf(k.entradas)}</td><td>${money(k.valorTotal)}</td><td>${money(k.valorTotal*PCT)}</td></tr>`).join('') : `<tr><td colspan="4" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}
+    </tbody>
+  </table>
+  </div>`;
+}
+window.addComision = async function(clienteId){
+  const evento=document.getElementById('km_evento').value.trim();
+  const entradas=Number(document.getElementById('km_entradas').value)||0;
+  const valorTotal=Number(document.getElementById('km_valor').value)||0;
+  if(!evento){ alert('Indica el evento.'); return; }
+  await S.fb.addDoc(col('crm2_comisiones'), {clienteId, evento, entradas, valorTotal, fecha:todayISO()});
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Comisión registrada', `${c?c.nombreEmpresa:clienteId} · ${evento} · ${money(valorTotal)}`);
+  render();
+}
+
+/* ===================== SEGUIMIENTOS ===================== */
+/* ---- Investigación comercial (ficha de investigación por cliente) ---- */
+function tabInvestigacion(c){
+  const inv = c.investigacion || {};
+  return `
+  <div>
+    <label class="btn btn-ghost text-xs mb-3" style="cursor:pointer;display:inline-block">📤 Rellenar desde archivo (.txt)<input type="file" accept=".txt" style="display:none" onchange="importarFichaCliente(event)"></label>
+    ${inv.fecha ? `<div class="text-xs mb-3" style="color:var(--ink-dim)">Última investigación registrada: ${esc(inv.fecha)}</div>` : `<div class="text-xs mb-3" style="color:var(--ink-dim)">Sin investigación registrada todavía.</div>`}
+    <div class="space-y-3">
+      <div><label>Naturaleza / tipo de entidad</label><input id="inv_naturaleza" placeholder="Ej: asociación sin ánimo de lucro, agencia, sala..." value="${esc(inv.naturaleza)}"></div>
+      <div><label>Tamaño</label><input id="inv_tamano" placeholder="Ej: 2-9 empleados, aforo 300..." value="${esc(inv.tamano)}"></div>
+      <div><label>Actividad real confirmada</label><textarea id="inv_actividad" rows="4" placeholder="Qué hace, eventos que organiza, con qué frecuencia...">${esc(inv.actividad)}</textarea></div>
+      <div><label>Situación actual (plataforma/ventas)</label><textarea id="inv_situacion" rows="2">${esc(inv.situacion)}</textarea></div>
+      <div><label>Oportunidad para EntradasYa</label><textarea id="inv_oportunidad" rows="2">${esc(inv.oportunidad)}</textarea></div>
+      <div><label>Punto de entrada recomendado</label><textarea id="inv_puntoEntrada" rows="2">${esc(inv.puntoEntrada)}</textarea></div>
+      <div><label>Observaciones / datos pendientes de confirmar</label><textarea id="inv_observaciones" rows="2">${esc(inv.observaciones)}</textarea></div>
+    </div>
+    <button class="btn btn-accent w-full mt-4" onclick="saveInvestigacion('${c.id}')">Guardar investigación</button>
+  </div>`;
+}
+window.saveInvestigacion = async function(clienteId){
+  const g = k => document.getElementById('inv_'+k).value.trim();
+  const investigacion = {
+    naturaleza: g('naturaleza'), tamano: g('tamano'), actividad: g('actividad'),
+    situacion: g('situacion'), oportunidad: g('oportunidad'), puntoEntrada: g('puntoEntrada'),
+    observaciones: g('observaciones'), fecha: todayISO()
+  };
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), { investigacion });
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Investigación comercial guardada', c?c.nombreEmpresa:clienteId);
+  render();
+}
+
+function viewSeguimientos(){
+  const hoy = todayISO();
+  const cs = misClientes().filter(c=>c.proximoSeguimiento);
+  const atrasados = cs.filter(c=>c.proximoSeguimiento<hoy).sort((a,b)=>a.proximoSeguimiento.localeCompare(b.proximoSeguimiento));
+  const hoyList = cs.filter(c=>c.proximoSeguimiento===hoy);
+  const proximos = cs.filter(c=>c.proximoSeguimiento>hoy).sort((a,b)=>a.proximoSeguimiento.localeCompare(b.proximoSeguimiento));
+  const tabla = (list,label,color)=>`
+    <div class="panel p-4 mb-4">
+      <div class="font-bold mb-3" style="${color?`color:${color}`:''}">${label} (${list.length})</div>
+      <div class="overflow-x-auto"><table>
+        <thead><tr><th>Cliente</th><th>Comercial</th><th>Último contacto</th><th>Próxima acción</th><th>Fecha</th><th></th></tr></thead>
+        <tbody>${list.length? list.map(c=>{
+          const ultimo = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))[0];
+          return `<tr class="row" onclick="openCliente('${c.id}')">
+            <td class="font-semibold">${esc(c.nombreEmpresa)}</td>
+            <td style="color:var(--ink-dim)">${nombreComercial(c.comercialId)}</td>
+            <td>${fdate(c.ultimoContacto)}</td>
+            <td>${esc(ultimo?.proximoPaso||'-')}</td>
+            <td>${fdate(c.proximoSeguimiento)}</td>
+            <td onclick="event.stopPropagation()"><button class="btn btn-ghost text-xs" onclick="marcarSeguimientoHecho('${c.id}')">✓ Marcar hecho</button></td></tr>`;
+        }).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Nada aquí.</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+  return `
+  <h2 class="text-xl font-bold mb-1">Seguimientos</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Gestiona tus próximas acciones comerciales.</p>
+  ${tabla(atrasados,'Atrasados','#e0603e')}
+  ${tabla(hoyList,'Hoy','#e0a53e')}
+  ${tabla(proximos,'Próximos')}
+  `;
+}
+window.marcarSeguimientoHecho = async function(id){
+  const c = S.clientes.find(x=>x.id===id);
+  if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; }
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), {proximoSeguimiento:'', ultimoContacto:todayISO()});
+  logAction('Seguimiento marcado como hecho', c?c.nombreEmpresa:id);
+  render();
+}
+
+/* ===================== COMISIONES ===================== */
+function viewComisiones(){
+  const cs = misClientes();
+  const rows = S.comisiones.filter(k=>cs.some(c=>c.id===k.clienteId)).map(k=>{
+    const c = S.clientes.find(x=>x.id===k.clienteId);
+    return {...k, cliente:c};
+  }).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const totalVentas = rows.reduce((a,r)=>a+Number(r.valorTotal||0),0);
+  return `
+  <h2 class="text-xl font-bold mb-1">Comisiones</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Ventas registradas y comisión comercial (4% sobre valor vendido).</p>
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+    <div class="panel p-4"><div class="kicker">Ventas totales</div><div class="stat-num">${money(totalVentas)}</div></div>
+    <div class="panel p-4"><div class="kicker">Comisión total (4%)</div><div class="stat-num" style="color:var(--accent)">${money(totalVentas*PCT)}</div></div>
+    <div class="panel p-4"><div class="kicker">Registros</div><div class="stat-num">${numf(rows.length)}</div></div>
+  </div>
+  <div class="panel p-4"><div class="overflow-x-auto"><table>
+    <thead><tr><th>Fecha</th><th>Cliente</th>${isAdmin()?'<th>Comercial</th>':''}<th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Comisión 4%</th></tr></thead>
+    <tbody>${rows.length? rows.map(r=>`<tr>
+      <td>${fdate(r.fecha)}</td><td class="font-semibold">${esc(r.cliente?.nombreEmpresa||'-')}</td>
+      ${isAdmin()?`<td style="color:var(--ink-dim)">${nombreComercial(r.cliente?.comercialId)}</td>`:''}
+      <td>${esc(r.evento)}</td><td>${numf(r.entradas)}</td><td>${money(r.valorTotal)}</td><td>${money(r.valorTotal*PCT)}</td></tr>`).join('') : `<tr><td colspan="7" style="color:var(--ink-dim)">Sin ventas registradas todavía.</td></tr>`}</tbody>
+  </table></div></div>`;
+}
+
+/* ===================== COMERCIALES (admin) ===================== */
+function viewComerciales(){
+  return `
+  <div class="flex items-center justify-between mb-5">
+    <div><h2 class="text-xl font-bold">Comerciales</h2><p class="text-sm" style="color:var(--ink-dim)">${S.comerciales.length} en el equipo</p></div>
+    <button class="btn btn-accent" onclick="openComercialForm()">+ Nuevo comercial</button>
+  </div>
+  <div class="panel p-4"><div class="overflow-x-auto"><table>
+    <thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Estado</th><th>Clientes</th><th></th></tr></thead>
+    <tbody>${S.comerciales.length? S.comerciales.map(cm=>{
+      const n = S.clientes.filter(c=>c.comercialId===cm.id).length;
+      return `<tr>
+        <td class="font-semibold">${esc(cm.nombre)}</td><td>${esc(cm.email)}</td><td>${esc(cm.telefono||'-')}</td>
+        <td>${fdate(cm.fechaIncorporacion)}</td>
+        <td><span class="badge" style="background:${cm.estado==='activo'?'#26332c':'#332626'};color:${cm.estado==='activo'?'#3ecf8e':'#e0603e'}">${cm.estado}</span></td>
+        <td><span style="cursor:pointer;text-decoration:underline;color:var(--info)" onclick="verClientesDeComercial('${cm.id}')">${n}</span></td>
+        <td><button class="btn btn-ghost text-xs" onclick="openComercialForm('${cm.id}')">Editar</button></td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="7" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}</tbody>
+  </table></div></div>`;
+}
+window.verClientesDeComercial = function(comercialId){
+  S.ui.clienteFiltro = {q:'',comercial:comercialId,estado:'',tipo:'',prioridad:''};
+  S.ui.view='clientes'; render();
+}
+window.openComercialForm = function(id){ S.ui.showComercialForm = id || 'new'; render(); }
+window.closeComercialForm = function(){ S.ui.showComercialForm = null; render(); }
+function modalComercialForm(){
+  const editing = S.ui.showComercialForm!=='new';
+  const cm = editing ? S.comerciales.find(x=>x.id===S.ui.showComercialForm) : {};
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closeComercialForm()">
+    <div class="panel p-6 w-full max-w-md mt-4">
+      <div class="flex justify-between items-center mb-4"><div class="font-bold text-lg">${editing?'Editar comercial':'Nuevo comercial'}</div><button class="btn btn-ghost text-xs" onclick="closeComercialForm()">Cerrar</button></div>
+      <div class="space-y-3">
+        <div><label>Nombre</label><input id="cm_nombre" value="${esc(cm.nombre)}"></div>
+        <div><label>Email</label><input id="cm_email" type="email" value="${esc(cm.email)}"></div>
+        <div><label>Teléfono</label><input id="cm_telefono" value="${esc(cm.telefono)}"></div>
+        <div><label>Fecha de incorporación</label><input id="cm_fecha" type="date" value="${cm.fechaIncorporacion||todayISO()}"></div>
+        <div><label>Estado</label><select id="cm_estado"><option value="activo" ${cm.estado==='activo'?'selected':''}>Activo</option><option value="inactivo" ${cm.estado==='inactivo'?'selected':''}>Inactivo</option></select></div>
+        ${!editing?`<div class="pt-2 border-t" style="border-color:var(--line)"><div class="kicker mb-2">Acceso al CRM</div><label>Contraseña de acceso inicial</label><input id="cm_pass" type="password" placeholder="Si la dejas en blanco, se usa su nombre"><p class="text-xs mt-1" style="color:var(--ink-dim)">El comercial podrá cambiarla desde su cuenta en cualquier momento.</p></div>`:''}
+      </div>
+      <button class="btn btn-accent w-full mt-5" onclick="saveComercial(${editing?`'${cm.id}'`:'null'})">Guardar</button>
+    </div>
+  </div>`;
+}
+window.saveComercial = async function(id){
+  const g = k=>document.getElementById('cm_'+k).value;
+  const data = {nombre:g('nombre').trim(), email:g('email').trim().toLowerCase(), telefono:g('telefono').trim(), fechaIncorporacion:g('fecha'), estado:g('estado')};
+  if(!data.nombre||!data.email){ alert('Nombre y email son obligatorios.'); return; }
+  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), data); logAction('Comercial editado', data.nombre); }
+  else{
+    const ref = await S.fb.addDoc(col('crm2_comerciales'), data);
+    const pass = g('pass') || data.nombre.toLowerCase().replace(/\s+/g,'');
+    await S.fb.setDoc(S.fb.doc(col('crm2_users'), uid()), {nombre:data.nombre, email:data.email, pass, role:'comercial', comercialId:ref.id, creado:todayISO()});
+    logAction('Comercial creado', data.nombre);
+  }
+  S.ui.showComercialForm=null; render();
+}
+
+/* ===================== IMPORTAR / EXPORTAR ===================== */
+function viewImportar(){
+  return `
+  <h2 class="text-xl font-bold mb-1">Importar / Exportar</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Importa tu base de contactos desde CSV o exporta la cartera actual.</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="panel p-5">
+      <div class="font-bold mb-2">Importar CSV</div>
+      <p class="text-xs mb-3" style="color:var(--ink-dim)">Columnas esperadas: Nombre, Empresa, Teléfono, Email, Ciudad, Provincia, Tipo de cliente. El sistema detecta duplicados por email o teléfono antes de importar.</p>
+      <input type="file" id="csvFile" accept=".csv" class="mb-3">
+      <button class="btn btn-accent" onclick="handleCsvFile()">Analizar archivo</button>
+      <div id="importResult" class="mt-4"></div>
+    </div>
+    <div class="panel p-5">
+      <div class="font-bold mb-2">Exportar clientes</div>
+      ${isOwner()?`
+      <p class="text-xs mb-3" style="color:var(--ink-dim)">Exporta la cartera visible actualmente (según tus filtros en la pestaña Clientes).</p>
+      <button class="btn btn-ghost" onclick="exportCsv()">Descargar CSV</button>
+      `:`
+      <p class="text-xs" style="color:var(--ink-dim)">La descarga de la base de datos está restringida al administrador principal.</p>
+      `}
+    </div>
+  </div>`;
+}
+window.handleCsvFile = function(){
+  const file = document.getElementById('csvFile').files[0];
+  if(!file){ alert('Selecciona un archivo CSV.'); return; }
+  Papa.parse(file, {
+    header:true, skipEmptyLines:true,
+    complete: res => processImport(res.data)
+  });
+}
+function normPhone(s){ return (s||'').replace(/\D/g,''); }
+function processImport(rows){
+  const existingEmails = new Set(S.clientes.map(c=>(c.email||'').toLowerCase()).filter(Boolean));
+  const existingPhones = new Set(S.clientes.map(c=>normPhone(c.telefono)).filter(Boolean));
+  const get = (r,...keys)=>{ for(const k of keys){ const found = Object.keys(r).find(kk=>kk.trim().toLowerCase()===k); if(found && r[found]) return r[found]; } return ''; };
+  const mapped = rows.map(r=>({
+    nombreEmpresa: get(r,'empresa','nombre de empresa','sala','compañía')||get(r,'nombre'),
+    personaContacto: get(r,'nombre','persona de contacto','contacto'),
+    telefono: get(r,'teléfono','telefono','tel','whatsapp'),
+    email: get(r,'email','correo').toLowerCase(),
+    instagram: get(r,'instagram').replace(/^@/,''),
+    ciudad: get(r,'ciudad'),
+    provincia: get(r,'provincia'),
+    tipoCliente: get(r,'tipo de cliente','tipo')||'Otro'
+  })).filter(r=>r.nombreEmpresa);
+  mapped.forEach(r=>{ r.dup = (r.email && existingEmails.has(r.email)) || (r.telefono && existingPhones.has(normPhone(r.telefono))); });
+  S.ui.importRows = mapped;
+  const dupes = mapped.filter(r=>r.dup).length;
+  document.getElementById('importResult').innerHTML = `
+    <div class="text-sm mb-2">${mapped.length} filas leídas · <span style="color:${dupes?'var(--warn)':'var(--accent)'}">${dupes} posibles duplicados detectados</span></div>
+    <div class="max-h-64 overflow-y-auto panel2 p-2 mb-3 text-xs">
+      ${mapped.slice(0,300).map(r=>`<div class="flex justify-between py-1 border-b" style="border-color:var(--line)"><span>${esc(r.nombreEmpresa)} ${r.dup?'<span class=\"badge\" style=\"background:#332626;color:#e0603e\">DUPLICADO</span>':''}</span><span style="color:var(--ink-dim)">${esc(r.email||r.telefono||'')}</span></div>`).join('')}
+      ${mapped.length>300?`<div class="text-center pt-2" style="color:var(--ink-dim)">... y ${mapped.length-300} más</div>`:''}
+    </div>
+    <button class="btn btn-accent" onclick="confirmImport(false)">Importar ${mapped.length-dupes} nuevos (omitir duplicados)</button>
+    <button class="btn btn-ghost ml-2" onclick="confirmImport(true)">Importar todos igualmente</button>
+  `;
+}
+window.confirmImport = async function(includeDupes){
+  const rows = includeDupes ? S.ui.importRows : S.ui.importRows.filter(r=>!r.dup);
+  let batch = S.fb.writeBatch(S.db); let count=0; let total=0;
+  for(const r of rows){
+    const ref = S.fb.doc(col('crm2_clientes'));
+    batch.set(ref, {
+      nombreEmpresa:r.nombreEmpresa, personaContacto:r.personaContacto, telefono:r.telefono, email:r.email, instagram:r.instagram,
+      ciudad:r.ciudad, provincia:r.provincia, tipoCliente:r.tipoCliente, estado:'Nuevo', prioridad:'BAJO',
+      comercialId: isAdmin()? null : S.session.comercialId, fechaAlta:todayISO()
+    });
+    count++; total++;
+    if(count===450){ await batch.commit(); batch = S.fb.writeBatch(S.db); count=0; }
+  }
+  if(count>0) await batch.commit();
+  logAction('Importación CSV', `${total} clientes importados`);
+  alert(`${total} clientes importados correctamente.`);
+  document.getElementById('importResult').innerHTML='';
+  S.ui.importRows=[];
+}
+window.exportCsv = function(){
+  if(!isOwner()){ logAction('Intento de descarga bloqueado', 'Sin permiso'); alert('No tienes permiso para descargar la base de datos.'); return; }
+  logAction('Exportación CSV', '');
+  const f = S.ui.clienteFiltro;
+  let cs = misClientes().map(c=>({...c,...calcPotencial(c)}));
+  if(f.q) cs = cs.filter(c=> [c.nombreEmpresa,c.personaContacto,c.telefono,c.email,c.ciudad].join(' ').toLowerCase().includes(f.q.toLowerCase()));
+  if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
+  if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
+  if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
+  if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  const data = cs.map(c=>({
+    Empresa:c.nombreEmpresa, Contacto:c.personaContacto, Telefono:c.telefono, Email:c.email, Instagram:c.instagram, Ciudad:c.ciudad, Provincia:c.provincia,
+    Tipo:c.tipoCliente, Estado:c.estado, Comercial:nombreComercial(c.comercialId),
+    VentasRegistradas:c.ventasAnuales, RetornoRegistrado:c.retornoAnual, Prioridad:c.prioridad
+  }));
+  const csv = Papa.unparse(data);
+  const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entradasya_clientes.csv'; a.click();
+}
+
+/* ===================== ACTIVIDAD (solo admin principal) ===================== */
+function viewActividad(){
+  if(!isOwner()) return '<p style="color:var(--ink-dim)">No tienes acceso a esta sección.</p>';
+  const logs = S.logs.slice(0,300);
+  return `
+  <h2 class="text-xl font-bold mb-1">Actividad</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Registro de movimientos de todos los usuarios (últimos 300).</p>
+  <div class="panel p-4"><div class="overflow-x-auto"><table>
+    <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Rol</th><th>Acción</th><th>Detalle</th></tr></thead>
+    <tbody>${logs.length? logs.map(l=>`<tr>
+      <td style="color:var(--ink-dim)">${l.fechaHora? new Date(l.fechaHora).toLocaleString('es-ES') : '-'}</td>
+      <td class="font-semibold">${esc(l.usuario)}</td>
+      <td>${esc(l.role==='admin'?'Administrador':'Comercial')}</td>
+      <td>${esc(l.accion)}</td>
+      <td style="color:var(--ink-dim)">${esc(l.detalle||'-')}</td></tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Sin actividad registrada todavía.</td></tr>`}</tbody>
+  </table></div></div>`;
+}
+
+/* ===================== INICIO ===================== */
+window.addEventListener('fb-ready', ()=>{ render(); });
+</script>
+</body>
+</html>  listenersOn:false,
+  ui:{ view:'dashboard', clienteFiltro:{q:'',comercial:'',estado:'',tipo:'',prioridad:''}, clienteDetalleId:null, clienteDetalleTab:'comisiones', importStep:0, importRows:[], importDupes:[], showPasswordForm:false }
+};
+const PCT = 0.04;
+const money = n => (isFinite(n)?n:0).toLocaleString('es-ES',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const numf = n => (isFinite(n)?n:0).toLocaleString('es-ES');
+const fdate = d => { if(!d) return '-'; const dt = (d instanceof Date)? d : new Date(d); if(isNaN(dt)) return '-'; return dt.toLocaleDateString('es-ES'); };
+const todayISO = () => new Date().toISOString().slice(0,10);
+const uid = () => Math.random().toString(36).slice(2,10);
+
+const ESTADOS = ["Nuevo","1º toma de contacto","Interesado","Seguimiento","Negociación","Primer evento","Cliente activo","Cliente recurrente","Perdido"];
+const TIPOS = ["Sala","Discoteca","Promotor","Productora","Festival","Asociación","Teatro","Palacio de congresos/Auditorios","Artista / manager","Otro"];
+const TIPOS_CONTACTO = ["Llamada","WhatsApp","Email","Instagram","Reunión","Videollamada","Otro"];
+const PRIORIDADES = ["BAJO","MEDIO","ALTO","ESTRATÉGICO"];
+const RESULTADOS = ["No contesta","1º toma de contacto","Interesado","Quiere información","Quiere reunión","Quiere probar EntradasYa.es","Negociación","Cliente conseguido","No interesado"];
+
+// Calcula ventas y retorno REALES a partir de los eventos/comisiones que se han
+// introducido para ese cliente (ya no es una estimación, son datos reales una vez registrados).
+function calcPotencial(c){
+  const ks = S.comisiones.filter(k=>k.clienteId===c.id);
+  const entradasAnuales = ks.reduce((a,k)=>a+(Number(k.entradas)||0),0);
+  const ventasAnuales = ks.reduce((a,k)=>a+(Number(k.valorTotal)||0),0);
+  const retornoAnual = ventasAnuales*PCT;
+  const retornoMensual = retornoAnual/12;
+  return {entradasAnuales, ventasAnuales, retornoAnual, retornoMensual};
+}
+function prioridadDe(retornoAnual){
+  if(retornoAnual>10000) return 'ESTRATÉGICO';
+  if(retornoAnual>=5000) return 'ALTO';
+  if(retornoAnual>=2000) return 'MEDIO';
+  return 'BAJO';
+}
+function prioridadColor(p){
+  return {BAJO:'background:#2a2f22;color:#a9c15a', MEDIO:'background:#2a2c1e;color:#e0c23e', ALTO:'background:#2c2418;color:#e0a53e', 'ESTRATÉGICO':'background:#26332c;color:#3ecf8e'}[p]||'';
+}
+function estadoColor(e){
+  const map = {Nuevo:'#4d8ff0', '1º toma de contacto':'#4d8ff0', Interesado:'#e0c23e', Seguimiento:'#e0a53e', Negociación:'#e0a53e', 'Primer evento':'#3ecf8e', 'Cliente activo':'#3ecf8e', 'Cliente recurrente':'#3ecf8e', Perdido:'#e0603e'};
+  return map[e]||'#8fa1b0';
+}
+
+/* ===================== FIREBASE ===================== */
+function connectFirebase(cfg){
+  S.fb = window.__fb;
+  S.fbApp = S.fb.initializeApp(cfg);
+  S.db = S.fb.getFirestore(S.fbApp);
+  S.config = cfg;
+  localStorage.setItem('ey_fb_config', JSON.stringify(cfg));
+}
+function col(name){ return S.fb.collection(S.db, name); }
+
+function startListeners(){
+  if(S.listenersOn) return;
+  S.listenersOn = true;
+  S.fb.onSnapshot(col('crm2_comerciales'), snap=>{ S.comerciales = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_clientes'), snap=>{ S.clientes = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  // (crm2_eventos ya no se usa: los eventos/comisiones reales viven en crm2_comisiones)
+  S.fb.onSnapshot(col('crm2_contactos'), snap=>{ S.contactos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_comisiones'), snap=>{ S.comisiones = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_log'), snap=>{ S.logs = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fechaHora||'').localeCompare(a.fechaHora||'')); render(); });
+}
+
+/* ===================== LOG DE ACTIVIDAD ===================== */
+async function logAction(accion, detalle){
+  try{
+    await S.fb.addDoc(col('crm2_log'), {
+      accion, detalle: detalle||'',
+      usuario: (S.session&&(S.session.nombre||S.session.email))||'desconocido',
+      email: (S.session&&S.session.email)||'',
+      role: (S.session&&S.session.role)||'',
+      fechaHora: new Date().toISOString()
+    });
+  }catch(e){ /* si falla el log, no bloqueamos la acción principal */ }
+}
+
+async function ensureAdminBootstrap(){
+  const snap = await S.fb.getDocs(col('crm2_users'));
+  return snap.size===0;
+}
+
+/* ===================== RENDER RAÍZ ===================== */
+function render(){
+  const root = document.getElementById('app');
+  if(!S.config){ root.innerHTML = viewSetup(); return; }
+  if(!S.db){ connectFirebase(S.config); }
+  if(!S.session){ root.innerHTML = viewCheckingOrLogin(); if(!S._checked){ checkBootstrap(); } return; }
+  startListeners();
+  root.innerHTML = viewApp();
+}
+let bootstrapNeeded = null;
+async function checkBootstrap(){
+  S._checked = true;
+  bootstrapNeeded = await ensureAdminBootstrap();
+  render2();
+}
+function render2(){ document.getElementById('app').innerHTML = viewCheckingOrLogin(); }
+
+/* ===================== VISTA: SETUP FIREBASE ===================== */
+function viewSetup(){
+  return `
+  <div class="min-h-screen flex items-center justify-center p-6">
+    <div class="panel p-8 w-full max-w-lg">
+      <h1 class="text-xl font-bold mb-1">EntradasYa CRM</h1>
+      <p class="text-sm mb-5" style="color:var(--ink-dim)">Conecta tu base de datos gratuita (Firebase Firestore). Crea un proyecto gratis en console.firebase.google.com, activa Firestore, copia el objeto de configuración web y pégalo aquí.</p>
+      <label>Configuración Firebase (objeto JSON)</label>
+      <textarea id="cfgInput" rows="8" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'></textarea>
+      <div id="cfgErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-4" onclick="submitConfig()">Guardar y conectar</button>
+    </div>
+  </div>`;
+}
+window.submitConfig = function(){
+  const txt = document.getElementById('cfgInput').value.trim();
+  try{
+    const cfg = JSON.parse(txt);
+    if(!cfg.projectId || !cfg.apiKey) throw new Error('faltan campos');
+    connectFirebase(cfg);
+    render();
+  }catch(e){ document.getElementById('cfgErr').textContent = 'JSON no válido. Revisa que hayas copiado el objeto completo.'; }
+}
+
+/* ===================== VISTA: LOGIN / BOOTSTRAP ===================== */
+function viewCheckingOrLogin(){
+  if(bootstrapNeeded===null){
+    return `<div class="min-h-screen flex items-center justify-center"><p style="color:var(--ink-dim)">Conectando...</p></div>`;
+  }
+  if(bootstrapNeeded){
+    return `
+    <div class="min-h-screen flex items-center justify-center p-6">
+      <div class="panel p-8 w-full max-w-md">
+        <h1 class="text-xl font-bold mb-1">Crear administrador</h1>
+        <p class="text-sm mb-5" style="color:var(--ink-dim)">No hay usuarios todavía. Crea la cuenta de administrador principal.</p>
+        <div class="space-y-3">
+          <div><label>Nombre</label><input id="bNombre"></div>
+          <div><label>Email</label><input id="bEmail" type="email"></div>
+          <div><label>Contraseña</label><input id="bPass" type="password"></div>
+        </div>
+        <div id="bErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+        <button class="btn btn-accent w-full mt-4" onclick="createAdmin()">Crear administrador</button>
+      </div>
+    </div>`;
+  }
+  return `
+  <div class="min-h-screen flex items-center justify-center p-6">
+    <div class="panel p-8 w-full max-w-md">
+      <h1 class="text-xl font-bold mb-1">EntradasYa CRM</h1>
+      <p class="text-sm mb-5" style="color:var(--ink-dim)">Inicia sesión para continuar.</p>
+      <div class="space-y-3">
+        <div><label>Email</label><input id="lEmail" type="email"></div>
+        <div><label>Contraseña</label><input id="lPass" type="password"></div>
+      </div>
+      <div id="lErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-4" onclick="doLogin()">Entrar</button>
+    </div>
+  </div>`;
+}
+window.createAdmin = async function(){
+  const nombre = document.getElementById('bNombre').value.trim();
+  const email = document.getElementById('bEmail').value.trim().toLowerCase();
+  const pass = document.getElementById('bPass').value;
+  if(!nombre||!email||!pass){ document.getElementById('bErr').textContent='Rellena todos los campos.'; return; }
+  const newId = uid();
+  await S.fb.setDoc(S.fb.doc(col('crm2_users'), newId), {nombre, email, pass, role:'admin', comercialId:null, creado:todayISO()});
+  bootstrapNeeded = false;
+  S.session = {userId:newId, email, nombre, role:'admin', comercialId:null};
+  localStorage.setItem('ey_session', JSON.stringify(S.session));
+  render();
+}
+window.doLogin = async function(){
+  const email = document.getElementById('lEmail').value.trim().toLowerCase();
+  const pass = document.getElementById('lPass').value;
+  const snap = await S.fb.getDocs(S.fb.query(col('crm2_users'), S.fb.where('email','==',email)));
+  const u = snap.docs.map(d=>({id:d.id,...d.data()})).find(x=>x.pass===pass);
+  if(!u){ document.getElementById('lErr').textContent='Email o contraseña incorrectos.'; return; }
+  S.session = {userId:u.id, email:u.email, nombre:u.nombre, role:u.role, comercialId:u.comercialId||null};
+  localStorage.setItem('ey_session', JSON.stringify(S.session));
+  render();
+  logAction('Inicio de sesión','');
+}
+window.doLogout = function(){ S.session=null; localStorage.removeItem('ey_session'); render(); }
+
+/* ===================== SHELL APP ===================== */
+function isAdmin(){ return S.session && S.session.role==='admin'; }
+const OWNER_EMAIL = 'danielgomezgarcia1980@gmail.com';
+function isOwner(){ return S.session && S.session.email===OWNER_EMAIL; }
+function misClientes(){
+  if(isAdmin()) return S.clientes;
+  // Cada comercial ve sus propios clientes asignados + el "pool" de contactos sin asignar todavía.
+  // En cuanto uno de ellos edita un contacto sin asignar, se le asigna automáticamente (ver saveCliente)
+  // y deja de ser visible/editable para el resto.
+  return S.clientes.filter(c=>c.comercialId===S.session.comercialId || !c.comercialId);
+}
+function puedeEditar(c){
+  if(!c) return false;
+  if(isAdmin()) return true;
+  return !c.comercialId || c.comercialId===S.session.comercialId;
+}
+function viewApp(){
+  const nav = [
+    ['dashboard','Panel'],['clientes','Clientes'],['seguimientos','Seguimientos'],
+    ['comisiones','Comisiones'], ...(isAdmin()?[['comerciales','Comerciales'],['importar','Importar / Exportar']]:[]),
+    ...(isOwner()?[['actividad','Actividad']]:[])
+  ];
+  return `
+  <div class="flex min-h-screen">
+    <aside class="w-56 shrink-0 border-r p-4 flex flex-col" style="border-color:var(--line)">
+      <div class="mb-6">
+        <div class="font-extrabold text-lg">EntradasYa</div>
+        <div class="kicker">CRM comercial</div>
+      </div>
+      <nav class="space-y-1 flex-1">
+        ${nav.map(([k,l])=>`<div class="navitem ${S.ui.view===k?'active':''}" onclick="setView('${k}')">${l}</div>`).join('')}
+      </nav>
+      <div class="pt-4 border-t" style="border-color:var(--line)">
+        <div class="text-sm font-semibold">${S.session.nombre||S.session.email}</div>
+        <div class="text-xs mb-3" style="color:var(--ink-dim)">${isAdmin()?'Administrador':'Comercial'}</div>
+        <button class="btn btn-ghost w-full text-xs mb-2" onclick="openPasswordForm()">Cambiar contraseña</button>
+        <button class="btn btn-ghost w-full text-xs" onclick="doLogout()">Cerrar sesión</button>
+      </div>
+    </aside>
+    <main class="flex-1 p-6 overflow-x-hidden">
+      ${ S.ui.view==='dashboard' ? viewDashboard() :
+         S.ui.view==='clientes' ? viewClientes() :
+         S.ui.view==='seguimientos' ? viewSeguimientos() :
+         S.ui.view==='comisiones' ? viewComisiones() :
+         S.ui.view==='comerciales' ? viewComerciales() :
+         S.ui.view==='importar' ? viewImportar() :
+         S.ui.view==='actividad' ? viewActividad() : '' }
+    </main>
+  </div>
+  ${S.ui.clienteDetalleId ? modalClienteDetalle() : ''}
+  ${S.ui.showComercialForm ? modalComercialForm() : ''}
+  ${S.ui.showClienteForm ? modalClienteForm() : ''}
+  ${S.ui.showPasswordForm ? modalPasswordForm() : ''}
+  `;
+}
+
+/* ===================== CAMBIAR CONTRASEÑA (propia) ===================== */
+window.openPasswordForm = function(){ S.ui.showPasswordForm = true; render(); }
+window.closePasswordForm = function(){ S.ui.showPasswordForm = false; render(); }
+function modalPasswordForm(){
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closePasswordForm()">
+    <div class="panel p-6 w-full max-w-md mt-4">
+      <div class="flex justify-between items-center mb-4"><div class="font-bold text-lg">Cambiar contraseña</div><button class="btn btn-ghost text-xs" onclick="closePasswordForm()">Cerrar</button></div>
+      <div class="space-y-3">
+        <div><label>Contraseña actual</label><input id="pf_actual" type="password"></div>
+        <div><label>Nueva contraseña</label><input id="pf_nueva" type="password"></div>
+        <div><label>Repetir nueva contraseña</label><input id="pf_repetir" type="password"></div>
+      </div>
+      <div id="pfErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-5" onclick="savePassword()">Guardar contraseña</button>
+    </div>
+  </div>`;
+}
+window.savePassword = async function(){
+  const actual = document.getElementById('pf_actual').value;
+  const nueva = document.getElementById('pf_nueva').value;
+  const repetir = document.getElementById('pf_repetir').value;
+  const err = document.getElementById('pfErr');
+  if(!actual||!nueva||!repetir){ err.textContent='Rellena todos los campos.'; return; }
+  if(nueva!==repetir){ err.textContent='Las contraseñas nuevas no coinciden.'; return; }
+  if(nueva.length<4){ err.textContent='La nueva contraseña es demasiado corta.'; return; }
+  const ref = S.fb.doc(col('crm2_users'), S.session.userId);
+  const snap = await S.fb.getDoc(ref);
+  if(!snap.exists() || snap.data().pass!==actual){ err.textContent='La contraseña actual no es correcta.'; return; }
+  await S.fb.updateDoc(ref, {pass:nueva});
+  logAction('Cambio de contraseña','');
+  S.ui.showPasswordForm=false; render();
+  alert('Contraseña actualizada correctamente.');
+}
+window.setView = function(v){ S.ui.view=v; render(); }
+
+/* ===================== DASHBOARD ===================== */
+function viewDashboard(){
+  const cs = misClientes();
+  const total = cs.length;
+  const porEstado = e => cs.filter(c=>c.estado===e).length;
+  const nuevos = porEstado('Nuevo');
+  const contactados = cs.filter(c=>['1º toma de contacto','Interesado','Seguimiento','Negociación'].includes(c.estado)).length;
+  const interesados = porEstado('Interesado');
+  const negociacion = porEstado('Negociación');
+  const activos = cs.filter(c=>['Cliente activo','Cliente recurrente','Primer evento'].includes(c.estado)).length;
+  const perdidos = porEstado('Perdido');
+  const hoy = todayISO();
+  const proximos = cs.filter(c=>c.proximoSeguimiento && c.proximoSeguimiento>=hoy).length;
+  let ventasPotTotal=0, retornoPotTotal=0;
+  cs.forEach(c=>{ const p=calcPotencial(c); ventasPotTotal+=p.ventasAnuales; retornoPotTotal+=p.retornoAnual; });
+  const ranking = [...cs].map(c=>({...c,...calcPotencial(c)})).sort((a,b)=>b.retornoAnual-a.retornoAnual).slice(0,10);
+
+  const stat = (label,val,color)=>`
+    <div class="panel p-4">
+      <div class="kicker">${label}</div>
+      <div class="stat-num" style="${color?`color:${color}`:''}">${val}</div>
+    </div>`;
+
+  return `
+  <div class="mb-5">
+    <h2 class="text-xl font-bold">Panel principal</h2>
+    <p class="text-sm" style="color:var(--ink-dim)">Resumen ${isAdmin()?'global':'de tu cartera'}, actualizado en tiempo real.</p>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    ${stat('Total clientes', numf(total))}
+    ${stat('Nuevos', numf(nuevos), '#4d8ff0')}
+    ${stat('Contactados', numf(contactados))}
+    ${stat('Interesados', numf(interesados),'#e0c23e')}
+    ${stat('En negociación', numf(negociacion),'#e0a53e')}
+    ${stat('Clientes activos', numf(activos),'#3ecf8e')}
+    ${stat('Perdidos', numf(perdidos),'#e0603e')}
+    ${stat('Seguimientos pendientes', numf(proximos))}
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+    ${stat('Ventas potenciales / año', money(ventasPotTotal))}
+    ${stat('Retorno potencial / año (4%)', money(retornoPotTotal),'#3ecf8e')}
+    ${stat('Retorno potencial / mes', money(retornoPotTotal/12))}
+  </div>
+  <div class="panel p-4">
+    <div class="font-bold mb-3">Ranking de clientes por potencial económico</div>
+    <div class="overflow-x-auto">
+    <table>
+      <thead><tr><th>Cliente</th><th>Tipo</th><th>Ventas/año</th><th>Retorno 4%/año</th><th>Prioridad</th></tr></thead>
+      <tbody>
+        ${ranking.length? ranking.map(c=>`
+          <tr class="row" onclick="openCliente('${c.id}')">
+            <td class="font-semibold">${esc(c.nombreEmpresa)}</td>
+            <td style="color:var(--ink-dim)">${esc(c.tipoCliente||'-')}</td>
+            <td>${money(c.ventasAnuales)}</td>
+            <td>${money(c.retornoAnual)}</td>
+            <td><span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad}</span></td>
+          </tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Todavía no hay clientes con potencial calculado.</td></tr>`}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  ${isAdmin()? viewRendimientoComerciales() : ''}
+  `;
+}
+function viewRendimientoComerciales(){
+  const ESTADOS_RANKING = ['1º toma de contacto','Interesado','Negociación','Primer evento','Cliente activo','Cliente recurrente'];
+  const rows = S.comerciales.map(cm=>{
+    const propios = S.clientes.filter(c=>c.comercialId===cm.id);
+    const conseguidos = propios.filter(c=>['Cliente activo','Cliente recurrente','Primer evento'].includes(c.estado)).length;
+    const ventas = S.comisiones.filter(k=>propios.some(p=>p.id===k.clienteId)).reduce((a,k)=>a+Number(k.valorTotal||0),0);
+    const comision = ventas*PCT;
+    const porEstado = {};
+    ESTADOS_RANKING.forEach(e=> porEstado[e] = propios.filter(c=>c.estado===e).length);
+    return {cm, propios:propios.length, conseguidos, ventas, comision, porEstado};
+  });
+  const ranking = [...rows].sort((a,b)=>b.ventas-a.ventas);
+
+  return `
+  <div class="panel p-4 mt-4">
+    <div class="font-bold mb-3">Ranking de comerciales</div>
+    <div class="overflow-x-auto">
+    <table>
+      <thead><tr><th>#</th><th>Comercial</th>${ESTADOS_RANKING.map(e=>`<th>${e}</th>`).join('')}<th>Clientes conseguidos</th><th>Ventas generadas</th><th>Comisión (4%)</th></tr></thead>
+      <tbody>
+      ${ranking.length? ranking.map((r,i)=>`<tr${i===0?' style="background:var(--panel-2,rgba(62,207,142,.08))"':''}>
+          <td class="font-bold">${i+1}º</td>
+          <td class="font-semibold">${esc(r.cm.nombre)}</td>
+          ${ESTADOS_RANKING.map(e=>`<td style="text-align:center">${r.porEstado[e]}</td>`).join('')}
+          <td>${r.conseguidos}</td>
+          <td class="font-semibold">${money(r.ventas)}</td>
+          <td>${money(r.comision)}</td>
+        </tr>`).join('') : `<tr><td colspan="${4+ESTADOS_RANKING.length}" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+}
+
+/* ===================== CLIENTES ===================== */
+function viewClientes(){
+  const f = S.ui.clienteFiltro;
+  let cs = misClientes().map(c=>({...c,...calcPotencial(c)}));
+  if(f.q) cs = cs.filter(c=> [c.nombreEmpresa,c.personaContacto,c.telefono,c.email,c.ciudad].join(' ').toLowerCase().includes(f.q.toLowerCase()));
+  if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
+  if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
+  if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
+  if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  cs.sort((a,b)=>b.retornoAnual-a.retornoAnual);
+
+  const comercialOpt = cm => `<option value="${cm.id}" ${f.comercial===cm.id?'selected':''}>${esc(cm.nombre)}</option>`;
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  const visibleIds = cs.map(c=>c.id);
+  const allSelected = visibleIds.length>0 && visibleIds.every(id=>sel.has(id));
+
+  return `
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h2 class="text-xl font-bold">Clientes</h2>
+      <p class="text-sm" style="color:var(--ink-dim)">${cs.length} resultado(s)${sel.size?` · ${sel.size} seleccionado(s)`:''}</p>
+    </div>
+    <div class="flex gap-2">
+      ${isAdmin() && sel.size ? `<button class="btn btn-danger" onclick="deleteSelectedClientes()">Eliminar seleccionados (${sel.size})</button>` : ''}
+      <label class="btn btn-ghost" style="cursor:pointer">📤 Subir ficha comercial (.txt)<input type="file" accept=".txt" style="display:none" onchange="importarFichaGlobal(event)"></label>
+      <button class="btn btn-accent" onclick="openClienteForm()">+ Nuevo cliente</button>
+    </div>
+  </div>
+  <div class="panel p-3 mb-4 grid grid-cols-2 md:grid-cols-6 gap-2">
+    <input class="md:col-span-2" placeholder="Buscar nombre, contacto, tel, email, ciudad" value="${esc(f.q)}" oninput="setFiltro('q',this.value)">
+    ${isAdmin()?`<select onchange="setFiltro('comercial',this.value)"><option value="">Comercial: todos</option>${S.comerciales.map(comercialOpt).join('')}</select>`:''}
+    <select onchange="setFiltro('estado',this.value)"><option value="">Estado: todos</option>${ESTADOS.map(e=>`<option ${f.estado===e?'selected':''}>${e}</option>`).join('')}</select>
+    <select onchange="setFiltro('tipo',this.value)"><option value="">Tipo: todos</option>${TIPOS.map(t=>`<option ${f.tipo===t?'selected':''}>${t}</option>`).join('')}</select>
+    <select onchange="setFiltro('prioridad',this.value)"><option value="">Prioridad: todas</option>${PRIORIDADES.map(p=>`<option ${f.prioridad===p?'selected':''}>${p}</option>`).join('')}</select>
+  </div>
+  <div class="panel p-4">
+    <div class="overflow-x-auto">
+    <table>
+      <thead><tr>${isAdmin()?`<th style="width:40px;padding:.5rem"><input type="checkbox" onclick="event.stopPropagation();toggleSelectAllClientes(this.checked)" ${allSelected?'checked':''}></th>`:''}<th>Empresa</th><th>Contacto</th><th>Población</th><th>Tipo</th><th>Estado</th>${isAdmin()?'<th>Comercial</th>':''}<th>Retorno</th><th>Prioridad</th><th>Próx. seguim.</th></tr></thead>
+      <tbody>
+      ${cs.length? cs.map(c=>`
+        <tr class="row" onclick="openCliente('${c.id}')">
+          ${isAdmin()?`<td onclick="event.stopPropagation()" style="padding:.5rem;text-align:center"><input type="checkbox" onclick="toggleSelectCliente('${c.id}',this.checked)" ${sel.has(c.id)?'checked':''}></td>`:''}
+          <td class="font-semibold">${esc(c.nombreEmpresa)} ${c.investigacion?'<span title="Investigación comercial registrada" style="color:var(--info)">🔎</span>':''}</td>
+          <td style="color:var(--ink-dim)">${esc(c.personaContacto||'-')}</td>
+          <td style="color:var(--ink-dim)">${esc(c.ciudad||'-')}</td>
+          <td>${esc(c.tipoCliente||'-')}</td>
+          <td><span class="badge" style="background:${estadoColor(c.estado)}22;color:${estadoColor(c.estado)}">${esc(c.estado||'-')}</span></td>
+          ${isAdmin()?`<td onclick="event.stopPropagation()"><select onchange="asignarComercialRapido('${c.id}',this.value)"><option value="">Sin asignar</option>${S.comerciales.map(cm=>`<option value="${cm.id}" ${c.comercialId===cm.id?'selected':''}>${esc(cm.nombre)}</option>`).join('')}</select></td>`:''}
+          <td>${money(c.retornoAnual)}</td>
+          <td><span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad||'-'}</span></td>
+          <td style="color:var(--ink-dim)">${fdate(c.proximoSeguimiento)}</td>
+        </tr>`).join('') : `<tr><td colspan="10" style="color:var(--ink-dim)">Sin resultados. Ajusta los filtros o crea un cliente.</td></tr>`}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+}
+window.setFiltro = function(k,v){ S.ui.clienteFiltro[k]=v; render(); }
+window.asignarComercialRapido = async function(clienteId,comercialId){
+  if(!isAdmin()) return;
+  const c = S.clientes.find(x=>x.id===clienteId);
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {comercialId: comercialId||null});
+  logAction('Reasignación de cliente', `${c?c.nombreEmpresa:clienteId} → ${nombreComercial(comercialId)}`);
+}
+function nombreComercial(id){ const c = S.comerciales.find(x=>x.id===id); return c?c.nombre:'Sin asignar'; }
+window.openCliente = function(id){
+  const c = S.clientes.find(x=>x.id===id);
+  if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; }
+  S.ui.clienteDetalleId=id; S.ui.clienteDetalleTab='comisiones'; render();
+}
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+/* ---- Importar ficha comercial (.txt con formato ETIQUETA: valor) ---- */
+function parsearFichaTxt(texto){
+  const campos = {};
+  texto.split(/\r?\n/).forEach(linea=>{
+    const m = linea.match(/^\s*([A-Za-zÁÉÍÓÚÑáéíóúñ_]+)\s*:\s*(.*)$/);
+    if(!m) return;
+    const clave = m[1].trim().toUpperCase();
+    const valor = m[2].trim().replace(/\s*\|\s*/g, '\n');
+    campos[clave] = valor;
+  });
+  return {
+    nombreEmpresa: campos['EMPRESA']||'',
+    personaContacto: campos['CONTACTO']||campos['RESPONSABLE']||'',
+    tipoCliente: campos['TIPO']||'',
+    naturaleza: campos['NATURALEZA']||'',
+    tamano: campos['TAMANO']||campos['TAMAÑO']||'',
+    telefono: campos['TELEFONO']||campos['TELÉFONO']||'',
+    whatsapp: campos['WHATSAPP']||'',
+    email: campos['EMAIL']||'',
+    instagram: (campos['INSTAGRAM']||'').replace(/^@/,''),
+    web: campos['WEB']||'',
+    ciudad: campos['CIUDAD']||'',
+    provincia: campos['PROVINCIA']||'',
+    actividad: campos['ACTIVIDAD']||'',
+    situacion: campos['SITUACION']||campos['SITUACIÓN']||'',
+    oportunidad: campos['OPORTUNIDAD']||'',
+    puntoEntrada: campos['PUNTO_ENTRADA']||'',
+    observaciones: campos['OBSERVACIONES']||''
+  };
+}
+
+// Botón global en Clientes: sube una ficha y crea/actualiza el cliente correspondiente (TODOS los datos)
+window.importarFichaGlobal = function(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(e){
+    const d = parsearFichaTxt(e.target.result);
+    if(!d.nombreEmpresa){ alert('El archivo no tiene una línea "EMPRESA: ...", no se puede identificar el cliente.'); return; }
+    const existente = S.clientes.find(c => c.nombreEmpresa.trim().toLowerCase() === d.nombreEmpresa.trim().toLowerCase());
+    const investigacion = { naturaleza:d.naturaleza, tamano:d.tamano, actividad:d.actividad, situacion:d.situacion, oportunidad:d.oportunidad, puntoEntrada:d.puntoEntrada, observaciones:d.observaciones, fecha:todayISO() };
+    if(existente){
+      if(!confirm(`Ya existe "${existente.nombreEmpresa}" en el CRM. ¿Actualizar TODOS sus datos de contacto y su ficha de investigación con este archivo? (se sobrescribirá lo que ya hubiera)`)){ event.target.value=''; return; }
+      const patch = { investigacion };
+      // Se actualizan siempre todos los datos que traiga el archivo (si un campo viene vacío, se deja como estaba)
+      if(d.personaContacto) patch.personaContacto = d.personaContacto;
+      if(d.tipoCliente) patch.tipoCliente = d.tipoCliente;
+      if(d.telefono) patch.telefono = d.telefono;
+      if(d.whatsapp) patch.whatsapp = d.whatsapp;
+      if(d.email) patch.email = d.email;
+      if(d.instagram) patch.instagram = d.instagram;
+      if(d.web) patch.web = d.web;
+      if(d.ciudad) patch.ciudad = d.ciudad;
+      if(d.provincia) patch.provincia = d.provincia;
+      await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), existente.id), patch);
+      logAction('Ficha importada (actualiza todos los datos del cliente)', existente.nombreEmpresa);
+      S.ui.clienteDetalleId = existente.id; S.ui.clienteDetalleTab='investigacion';
+    } else {
+      const nuevo = {
+        nombreEmpresa: d.nombreEmpresa, personaContacto:d.personaContacto, tipoCliente:d.tipoCliente||'Otro',
+        telefono:d.telefono, whatsapp:d.whatsapp, email:d.email, instagram:d.instagram, web:d.web,
+        estado:'Nuevo', prioridad:'BAJO', ciudad:d.ciudad, provincia:d.provincia,
+        comercialId: isAdmin()? null : S.session.comercialId,
+        fechaAlta: todayISO(), investigacion
+      };
+      const ref = await S.fb.addDoc(col('crm2_clientes'), nuevo);
+      logAction('Ficha importada (cliente nuevo)', d.nombreEmpresa);
+      S.ui.clienteDetalleId = ref.id; S.ui.clienteDetalleTab='investigacion';
+    }
+    event.target.value = '';
+    render();
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+// Dentro de la ficha de un cliente ya abierto: sube un archivo y rellena el formulario de Investigación (sin guardar todavía)
+window.importarFichaCliente = function(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
   reader.onload = function(e){
     const d = parsearFichaTxt(e.target.result);
     const set = (id,val)=>{ const el=document.getElementById(id); if(el && val) el.value = val; };
