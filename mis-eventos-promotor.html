@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mis Eventos - Promotor</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc,
+  onSnapshot, query, where, getDocs, getDoc
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+window.__fb = { initializeApp, getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc };
+window.dispatchEvent(new Event("fb-ready"));
+</script>
+<style>
+  :root{
+    --bg:#0f1720; --panel:#16202b; --panel2:#1c2733; --line:#26333f;
+    --ink:#e7edf3; --ink-dim:#8fa1b0; --accent:#3ecf8e; --accent-dim:#255c46;
+    --warn:#e0a53e; --danger:#e0603e; --info:#4d8ff0;
+  }
+  body{background:var(--bg); color:var(--ink); font-family:'Inter',ui-sans-serif,system-ui,sans-serif;}
+  ::-webkit-scrollbar{width:8px;height:8px;} ::-webkit-scrollbar-thumb{background:#2c3a48;border-radius:4px;}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:10px;}
+  .panel2{background:var(--panel2); border:1px solid var(--line); border-radius:8px;}
+  .btn{padding:.55rem 1rem; border-radius:8px; font-weight:600; font-size:.875rem; transition:.15s; cursor:pointer;}
+  .btn-accent{background:var(--accent); color:#08130d;} .btn-accent:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent; border:1px solid var(--line); color:var(--ink);} .btn-ghost:hover{border-color:#3a4a5a;}
+  .btn-danger{background:var(--danger); color:#1a0704;} .btn-danger:hover{filter:brightness(1.1);}
+  .btn-info{background:var(--info); color:#08111f;} .btn-info:hover{filter:brightness(1.1);}
+  input,select,textarea{background:#0f1720; border:1px solid var(--line); color:var(--ink); border-radius:7px; padding:.5rem .65rem; font-size:.875rem; width:100%;}
+  input:focus,select:focus,textarea:focus{outline:none; border-color:var(--accent);}
+  label{font-size:.72rem; color:var(--ink-dim); font-weight:600; letter-spacing:.02em;}
+  .navitem{display:flex; align-items:center; gap:.6rem; padding:.6rem .8rem; border-radius:8px; color:var(--ink-dim); cursor:pointer; font-size:.875rem; font-weight:500;}
+  .navitem:hover{background:var(--panel2); color:var(--ink);}
+  .navitem.active{background:var(--accent-dim); color:var(--accent);}
+  .badge{padding:.15rem .55rem; border-radius:999px; font-size:.7rem; font-weight:700; letter-spacing:.02em; white-space:nowrap;}
+  table{width:100%; border-collapse:collapse; font-size:.83rem;}
+  th{text-align:left; color:var(--ink-dim); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; padding:.5rem .7rem; border-bottom:1px solid var(--line);}
+  td{padding:.55rem .7rem; border-bottom:1px solid var(--line);}
+  tr.row:hover{background:var(--panel2); cursor:pointer;}
+  .modal-bg{position:fixed; inset:0; background:rgba(6,10,14,.7); display:flex; align-items:flex-start; justify-content:center; z-index:50; padding:2rem 1rem; overflow-y:auto;}
+  .stat-num{font-size:1.7rem; font-weight:800; line-height:1;}
+  .kicker{font-size:.68rem; color:var(--ink-dim); font-weight:600; text-transform:uppercase; letter-spacing:.05em;}
+</style>
+</head>
+<body>
+<div id="app" class="min-h-screen"></div>
+
+<script>
+/* ===================== ESTADO GLOBAL ===================== */
+const S = {
+  fbApp:null, db:null, fb:null,
+  config: JSON.parse(localStorage.getItem('ey_fb_config')||'null'),
+  session: JSON.parse(localStorage.getItem('ey_session')||'null'),
+  eventos:[], clientes:[], eventosEY:[], listenersOn:false,
+  ui:{ view:'eventos', eventoEditando:undefined, filtro:'', filtroEstado:'', filtroTipo:'', eventoDetalleId:null }
+};
+const money = n => (isFinite(n)?n:0).toLocaleString('es-ES',{style:'currency',currency:'EUR'});
+const todayISO = () => new Date().toISOString().slice(0,10);
+const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+const TIPOS_CONTRAPARTE = ["Sala","Promotor","Artista"];
+const TIPOS_ACUERDO = [
+  {v:'fijo_persona', t:'Fijo por persona que accede'},
+  {v:'porcentaje', t:'% del total vendido'},
+  {v:'fijo_cierre', t:'Fijo, sin importar asistencia'},
+  {v:'solo_comision_ey', t:'Solo comisión de EntradasYa (sin acuerdo aparte)'}
+];
+const ESTADOS_EVENTO = ["Planificado","Confirmado","Realizado","Cancelado"];
+
+/* ===================== FIREBASE (comparte proyecto con tus otros CRM) ===================== */
+function connectFirebase(cfg){
+  S.fb = window.__fb;
+  S.fbApp = S.fb.initializeApp(cfg);
+  S.db = S.fb.getFirestore(S.fbApp);
+  S.config = cfg;
+  localStorage.setItem('ey_fb_config', JSON.stringify(cfg));
+}
+function col(name){ return S.fb.collection(S.db, name); }
+
+function startListeners(){
+  if(S.listenersOn) return;
+  S.listenersOn = true;
+  S.fb.onSnapshot(col('promo_eventos'), snap=>{ S.eventos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  // Lectura de tu CRM de Contactos (crm2_clientes) solo para enlazar sala/promotor/artista, sin duplicar datos
+  S.fb.onSnapshot(col('crm2_clientes'), snap=>{ S.clientes = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  // Lectura de tu CRM de Ventas online (Ventas_EntradasYa.html), guarda sus eventos como un único documento 'eventos' con un JSON dentro
+  S.fb.onSnapshot(S.fb.doc(S.db,'entradasya','eventos'), snap=>{
+    try{ S.eventosEY = snap.exists() ? (JSON.parse(snap.data().data)||[]) : []; }
+    catch(e){ S.eventosEY = []; }
+    render();
+  });
+}
+
+/* ===================== CÁLCULO ===================== */
+function calcularCobro(e){
+  const v = parseFloat(e.valorAcuerdo)||0;
+  if(e.tipoAcuerdo==='fijo_persona') return v * (parseFloat(e.asistentes)||0);
+  if(e.tipoAcuerdo==='porcentaje') return (v/100) * (parseFloat(e.ventasReales)||0);
+  if(e.tipoAcuerdo==='solo_comision_ey') return 0; // aquí no cobras aparte, el ingreso es la comisión de EntradasYa (va en el otro CRM)
+  return v; // fijo_cierre
+}
+function eventoEYVinculado(e){ return e.eyEventoId ? S.eventosEY.find(x=>x.id===e.eyEventoId) : null; }
+function calcularGastos(e){ return (e.gastos||[]).reduce((s,g)=>s+(parseFloat(g.importe)||0),0); }
+function calcularBeneficio(e){ return calcularCobro(e) - calcularGastos(e); }
+
+/* ===================== RENDER RAÍZ / SETUP / LOGIN (igual que tus otros CRM) ===================== */
+function render(){
+  const root = document.getElementById('app');
+  if(!S.config){ root.innerHTML = viewSetup(); return; }
+  if(!S.db){ connectFirebase(S.config); }
+  if(!S.session){ root.innerHTML = viewLogin(); return; }
+  startListeners();
+  root.innerHTML = viewApp();
+  if(S.ui.eventoEditando!==undefined) setTimeout(render_fp_camposAcuerdo, 0);
+}
+
+function viewSetup(){
+  return `
+  <div class="min-h-screen flex items-center justify-center p-6">
+    <div class="panel p-8 w-full max-w-lg">
+      <h1 class="text-xl font-bold mb-1">Mis Eventos - Promotor</h1>
+      <p class="text-sm mb-5" style="color:var(--ink-dim)">Usa la MISMA configuración de Firebase que tu CRM de Contactos y el de Ventas (mismo proyecto), así comparten datos y login.</p>
+      <label>Configuración Firebase (objeto JSON)</label>
+      <textarea id="cfgInput" rows="8" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'></textarea>
+      <div id="cfgErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-4" onclick="submitConfig()">Guardar y conectar</button>
+    </div>
+  </div>`;
+}
+window.submitConfig = function(){
+  const txt = document.getElementById('cfgInput').value.trim();
+  try{
+    const cfg = JSON.parse(txt);
+    if(!cfg.projectId || !cfg.apiKey) throw new Error('faltan campos');
+    connectFirebase(cfg);
+    render();
+  }catch(e){ document.getElementById('cfgErr').textContent = 'JSON no válido. Revisa que hayas copiado el objeto completo.'; }
+}
+
+function viewLogin(){
+  return `
+  <div class="min-h-screen flex items-center justify-center p-6">
+    <div class="panel p-8 w-full max-w-md">
+      <h1 class="text-xl font-bold mb-1">Mis Eventos - Promotor</h1>
+      <p class="text-sm mb-5" style="color:var(--ink-dim)">Entra con el mismo usuario y contraseña de tu CRM de Contactos.</p>
+      <div class="space-y-3">
+        <div><label>Email</label><input id="lEmail" type="email"></div>
+        <div><label>Contraseña</label><input id="lPass" type="password"></div>
+      </div>
+      <div id="lErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-4" onclick="doLogin()">Entrar</button>
+    </div>
+  </div>`;
+}
+window.doLogin = async function(){
+  const email = document.getElementById('lEmail').value.trim().toLowerCase();
+  const pass = document.getElementById('lPass').value;
+  const snap = await S.fb.getDocs(S.fb.query(col('crm2_users'), S.fb.where('email','==',email)));
+  const u = snap.docs.map(d=>({id:d.id,...d.data()})).find(x=>x.pass===pass);
+  if(!u){ document.getElementById('lErr').textContent='Email o contraseña incorrectos. Si no tienes cuenta, créala primero en el CRM de Contactos.'; return; }
+  S.session = {userId:u.id, email:u.email, nombre:u.nombre, role:u.role};
+  localStorage.setItem('ey_session', JSON.stringify(S.session));
+  render();
+}
+window.doLogout = function(){ S.session=null; localStorage.removeItem('ey_session'); render(); }
+
+/* ===================== APP ===================== */
+function viewApp(){
+  const nav = [['eventos','📅 Eventos'],['calendario','🗓️ Calendario'],['resumen','📊 Resumen']];
+  return `
+  <div class="flex min-h-screen">
+    <aside class="w-60 shrink-0 panel m-3 p-4 flex flex-col" style="border-radius:12px">
+      <div class="font-bold text-lg mb-1">Mis Eventos</div>
+      <div class="text-xs mb-5" style="color:var(--ink-dim)">como Promotor</div>
+      <nav class="space-y-1 flex-1">
+        ${nav.map(([v,l])=>`<div class="navitem ${S.ui.view===v?'active':''}" onclick="S.ui.view='${v}'; render();">${l}</div>`).join('')}
+      </nav>
+      <div class="pt-4 border-t" style="border-color:var(--line)">
+        <div class="text-sm font-semibold">${esc(S.session.nombre||S.session.email)}</div>
+        <button class="btn btn-ghost w-full text-xs mt-2" onclick="doLogout()">Cerrar sesión</button>
+      </div>
+    </aside>
+    <main class="flex-1 p-6 overflow-x-hidden">
+      ${ S.ui.view==='eventos' ? viewEventos() :
+         S.ui.view==='calendario' ? viewCalendario() :
+         S.ui.view==='resumen' ? viewResumen() : '' }
+    </main>
+  </div>
+  ${S.ui.eventoEditando!==undefined ? modalFormularioEvento() : ''}
+  ${S.ui.eventoDetalleId ? modalDetalleEvento() : ''}
+  `;
+}
+
+/* ===================== EVENTOS: LISTA ===================== */
+function viewEventos(){
+  const q = S.ui.filtro.toLowerCase().trim();
+  const list = S.eventos.filter(e=>{
+    if(S.ui.filtroEstado && e.estado!==S.ui.filtroEstado) return false;
+    if(S.ui.filtroTipo && e.contraparteTipo!==S.ui.filtroTipo) return false;
+    if(!q) return true;
+    return [e.nombre, e.contraparteNombre].some(c=>(c||'').toLowerCase().includes(q));
+  }).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+
+  return `
+  <div class="space-y-6">
+    <div class="panel p-6">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold">📅 Mis eventos como promotor</h2>
+        <button class="btn btn-accent" onclick="abrirNuevoEvento()">+ Nuevo evento</button>
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <input placeholder="🔎 Buscar por nombre de evento o contraparte..." value="${esc(S.ui.filtro)}"
+               oninput="S.ui.filtro=this.value; render();" style="flex:1;min-width:240px">
+        <select onchange="S.ui.filtroEstado=this.value; render();">
+          <option value="">Todos los estados</option>
+          ${ESTADOS_EVENTO.map(x=>`<option value="${x}" ${S.ui.filtroEstado===x?'selected':''}>${x}</option>`).join('')}
+        </select>
+        <select onchange="S.ui.filtroTipo=this.value; render();">
+          <option value="">Sala / Promotor / Artista</option>
+          ${TIPOS_CONTRAPARTE.map(x=>`<option value="${x}" ${S.ui.filtroTipo===x?'selected':''}>${x}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div class="panel overflow-hidden">
+      <div class="overflow-x-auto">
+      <table>
+        <thead><tr>
+          <th>Fecha</th><th>Evento</th><th>Contraparte</th><th>Acuerdo</th>
+          <th style="text-align:right">Tu cobro</th><th style="text-align:right">Beneficio</th>
+          <th>EntradasYa</th><th>Estado</th><th></th>
+        </tr></thead>
+        <tbody>
+        ${list.length? list.map(e=>{
+          const cobro = calcularCobro(e), gastos = calcularGastos(e), beneficio = calcularBeneficio(e);
+          const evEY = eventoEYVinculado(e);
+          return `<tr class="row" onclick="verDetalleEvento('${e.id}')">
+            <td>${e.fecha||'-'}</td>
+            <td class="font-semibold">${esc(e.nombre)}</td>
+            <td>${esc(e.contraparteNombre)} <span class="badge" style="background:#1c2733;color:var(--ink-dim)">${esc(e.contraparteTipo)}</span></td>
+            <td style="color:var(--ink-dim)">${TIPOS_ACUERDO.find(t=>t.v===e.tipoAcuerdo)?.t||'-'}</td>
+            <td style="text-align:right;font-weight:700;color:var(--accent)">${e.tipoAcuerdo==='solo_comision_ey'?'-':money(cobro)}</td>
+            <td style="text-align:right;font-weight:700;${beneficio>=0?'color:var(--accent)':'color:var(--danger)'}">${e.esPromotorInversion? money(beneficio) : '-'}</td>
+            <td>${evEY? `<span class="badge" style="background:#173023;color:var(--accent)" title="Neto EntradasYa: ${money(evEY.netoEntradasYa||0)}">🔗 ${esc(evEY.nombre)}</span>` : '-'}</td>
+            <td><span class="badge" style="background:#1c2733">${esc(e.estado)}</span></td>
+            <td onclick="event.stopPropagation()">
+              <button class="btn btn-ghost" style="padding:.3rem .6rem;font-size:.72rem" onclick="editarEvento('${e.id}')">✏️</button>
+              <button class="btn btn-danger" style="padding:.3rem .6rem;font-size:.72rem" onclick="borrarEvento('${e.id}')">🗑️</button>
+            </td>
+          </tr>`;
+        }).join('') : `<tr><td colspan="9" style="color:var(--ink-dim);text-align:center;padding:2rem">Sin eventos todavía.</td></tr>`}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ===================== FORMULARIO EVENTO ===================== */
+function abrirNuevoEvento(){ S.ui.eventoEditando=''; S.ui._gastosTmp=[]; render(); }
+function editarEvento(id){ S.ui.eventoEditando=id; S.ui.eventoDetalleId=null; const e=S.eventos.find(x=>x.id===id); S.ui._gastosTmp = e&&e.gastos? JSON.parse(JSON.stringify(e.gastos)) : []; render(); }
+
+function opcionesContraparte(tipoFiltro, actual){
+  const tiposCliente = tipoFiltro==='Sala' ? ['Sala','Discoteca','Teatro','Palacio de congresos/Auditorios']
+                      : tipoFiltro==='Artista' ? ['Artista / manager']
+                      : ['Promotor','Productora','Festival','Asociación','Otro'];
+  const opts = S.clientes.filter(c=>tiposCliente.includes(c.tipoCliente)).sort((a,b)=>a.nombreEmpresa.localeCompare(b.nombreEmpresa));
+  return `<option value="">-- Escribir manualmente abajo --</option>` +
+    opts.map(c=>`<option value="${c.id}" ${actual===c.id?'selected':''}>${esc(c.nombreEmpresa)}</option>`).join('');
+}
+
+function modalFormularioEvento(){
+  const e = S.ui.eventoEditando ? S.eventos.find(x=>x.id===S.ui.eventoEditando) : null;
+  const gastos = S.ui._gastosTmp || [];
+  return `
+  <div class="modal-bg" onclick="if(event.target===this){ S.ui.eventoEditando=undefined; render(); }">
+    <div class="panel p-6 w-full max-w-2xl mt-4">
+      <div class="flex justify-between items-center mb-4">
+        <div class="font-bold text-lg">${e?'✏️ Editar evento':'➕ Nuevo evento'}</div>
+        <button class="btn btn-ghost text-xs" onclick="S.ui.eventoEditando=undefined; render();">Cerrar</button>
+      </div>
+      <form id="formEvento" onsubmit="event.preventDefault(); guardarEvento();">
+        <div class="grid md:grid-cols-2 gap-3 mb-3">
+          <div><label>Nombre del evento *</label><input id="fp_nombre" required value="${esc(e?.nombre)}"></div>
+          <div><label>Fecha *</label><input id="fp_fecha" type="date" required value="${e?.fecha||''}"></div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-3 mb-3">
+          <div><label>Hora</label><input id="fp_hora" type="time" value="${e?.hora||'23:00'}"></div>
+          <div><label>Lugar (para el calendario)</label><input id="fp_lugar" value="${esc(e?.lugar)}" placeholder="Ej: Sala El Tren, Granada"></div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-3 mb-3">
+          <div>
+            <label>Tipo de contraparte *</label>
+            <select id="fp_contraparteTipo" onchange="refrescarSelectContraparte()">
+              ${TIPOS_CONTRAPARTE.map(t=>`<option value="${t}" ${e?.contraparteTipo===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label>Elegir de tu CRM de Contactos</label>
+            <select id="fp_contraparteId" onchange="autoRellenarContraparteNombre()">
+              ${opcionesContraparte(e?.contraparteTipo||'Sala', e?.contraparteId)}
+            </select>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label>Nombre de la contraparte *</label>
+          <input id="fp_contraparteNombre" required value="${esc(e?.contraparteNombre)}" placeholder="Se rellena solo si la eliges arriba, o escríbelo">
+        </div>
+
+        <div class="panel2 p-4 mb-3">
+          <div class="kicker mb-2">Acuerdo económico</div>
+          <div class="grid md:grid-cols-2 gap-3">
+            <div>
+              <label>Tipo de acuerdo *</label>
+              <select id="fp_tipoAcuerdo" onchange="render_fp_camposAcuerdo()">
+                ${TIPOS_ACUERDO.map(t=>`<option value="${t.v}" ${e?.tipoAcuerdo===t.v?'selected':''}>${t.t}</option>`).join('')}
+              </select>
+            </div>
+            <div id="fp_camposAcuerdo"></div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label>Vincular con evento de Ventas_EntradasYa (opcional, pero obligatorio de facto si el acuerdo es "solo comisión")</label>
+          <select id="fp_eyEventoId">
+            <option value="">-- Sin vincular --</option>
+            ${[...S.eventosEY].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')).map(ev=>`<option value="${ev.id}" ${e?.eyEventoId===ev.id?'selected':''}>${esc(ev.nombre)} — ${ev.fecha||'sin fecha'}${ev.sala?' — '+esc(ev.sala):''}</option>`).join('')}
+          </select>
+          ${S.eventosEY.length===0?`<p class="text-xs mt-1" style="color:var(--ink-dim)">No he podido leer eventos de tu CRM de Ventas todavía (o aún no tienes ninguno registrado ahí).</p>`:''}
+        </div>
+        <div class="mb-3">
+          <label><input type="checkbox" id="fp_esInversion" ${e?.esPromotorInversion?'checked':''} onchange="document.getElementById('fp_gastosBox').style.display=this.checked?'block':'none'" style="width:auto;display:inline-block;margin-right:.4rem"> Aquí eres promotor con inversión propia (llevas gastos)</label>
+        </div>
+
+        <div id="fp_gastosBox" class="panel2 p-4 mb-3" style="display:${e?.esPromotorInversion?'block':'none'}">
+          <div class="kicker mb-2">Gastos del evento</div>
+          <div id="fp_gastosLista">${renderGastosTmp()}</div>
+          <div class="flex gap-2 mt-2">
+            <input id="fp_gastoConcepto" placeholder="Concepto (ej: caché DJ)" style="flex:2">
+            <input id="fp_gastoImporte" type="number" step="0.01" placeholder="€" style="flex:1">
+            <button type="button" class="btn btn-ghost" onclick="agregarGastoTmp()">+ Añadir</button>
+          </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-3 mb-3">
+          <div><label>Estado</label>
+            <select id="fp_estado">${ESTADOS_EVENTO.map(x=>`<option ${e?.estado===x?'selected':''}>${x}</option>`).join('')}</select>
+          </div>
+          <div></div>
+        </div>
+        <div class="mb-4"><label>Notas</label><textarea id="fp_notas" rows="2">${esc(e?.notas)}</textarea></div>
+
+        <button type="submit" class="btn btn-accent w-full">💾 Guardar evento</button>
+      </form>
+    </div>
+  </div>`;
+}
+
+// Los campos de importe/asistentes/ventas dependen del tipo de acuerdo elegido; se pintan aparte
+// justo después de cada render(), ver más abajo en la función render().
+
+window.render_fp_camposAcuerdo = function(){
+  const sel = document.getElementById('fp_tipoAcuerdo'); if(!sel) return;
+  const tipo = sel.value;
+  const e = S.ui.eventoEditando ? S.eventos.find(x=>x.id===S.ui.eventoEditando) : null;
+  const box = document.getElementById('fp_camposAcuerdo');
+  if(tipo==='fijo_persona'){
+    box.innerHTML = `<label>€ por persona *</label><input id="fp_valorAcuerdo" type="number" step="0.01" required value="${e?.valorAcuerdo??''}">
+      <label class="mt-2 block">Asistentes previstos/reales</label><input id="fp_asistentes" type="number" step="1" value="${e?.asistentes??''}">`;
+  } else if(tipo==='porcentaje'){
+    box.innerHTML = `<label>% acordado *</label><input id="fp_valorAcuerdo" type="number" step="0.01" required value="${e?.valorAcuerdo??''}">
+      <label class="mt-2 block">Total vendido (€)</label><input id="fp_ventasReales" type="number" step="0.01" value="${e?.ventasReales??''}">`;
+  } else if(tipo==='solo_comision_ey'){
+    box.innerHTML = `<p class="text-xs" style="color:var(--ink-dim)">No hay cobro personal aparte en este evento. Enlázalo abajo con el evento real de tu CRM de Ventas para ver su comisión de EntradasYa como referencia.</p>`;
+  } else {
+    box.innerHTML = `<label>€ fijo acordado *</label><input id="fp_valorAcuerdo" type="number" step="0.01" required value="${e?.valorAcuerdo??''}">`;
+  }
+}
+window.refrescarSelectContraparte = function(){
+  const tipo = document.getElementById('fp_contraparteTipo').value;
+  document.getElementById('fp_contraparteId').innerHTML = opcionesContraparte(tipo, null);
+  document.getElementById('fp_contraparteNombre').value = '';
+}
+window.autoRellenarContraparteNombre = function(){
+  const id = document.getElementById('fp_contraparteId').value;
+  const c = S.clientes.find(x=>x.id===id);
+  if(c) document.getElementById('fp_contraparteNombre').value = c.nombreEmpresa;
+}
+window.agregarGastoTmp = function(){
+  const concepto = document.getElementById('fp_gastoConcepto').value.trim();
+  const importe = parseFloat(document.getElementById('fp_gastoImporte').value)||0;
+  if(!concepto || !importe) return;
+  S.ui._gastosTmp.push({concepto, importe});
+  document.getElementById('fp_gastoConcepto').value=''; document.getElementById('fp_gastoImporte').value='';
+  document.getElementById('fp_gastosLista').innerHTML = renderGastosTmp();
+}
+window.quitarGastoTmp = function(i){ S.ui._gastosTmp.splice(i,1); document.getElementById('fp_gastosLista').innerHTML = renderGastosTmp(); }
+function renderGastosTmp(){
+  const g = S.ui._gastosTmp||[];
+  if(!g.length) return `<p class="text-xs" style="color:var(--ink-dim)">Sin gastos añadidos.</p>`;
+  const total = g.reduce((s,x)=>s+x.importe,0);
+  return g.map((x,i)=>`<div class="flex justify-between text-sm py-1"><span>${esc(x.concepto)}</span><span>${money(x.importe)} <button type="button" onclick="quitarGastoTmp(${i})" style="color:var(--danger);margin-left:.5rem">✕</button></span></div>`).join('')
+    + `<div class="flex justify-between text-sm font-bold pt-2 border-t mt-1" style="border-color:var(--line)"><span>Total gastos</span><span>${money(total)}</span></div>`;
+}
+
+window.guardarEvento = async function(){
+  const g = id => document.getElementById(id);
+  const eyEventoId = g('fp_eyEventoId').value || null;
+  const datos = {
+    nombre: g('fp_nombre').value,
+    fecha: g('fp_fecha').value,
+    hora: g('fp_hora').value,
+    lugar: g('fp_lugar').value,
+    contraparteTipo: g('fp_contraparteTipo').value,
+    contraparteId: g('fp_contraparteId').value || null,
+    contraparteNombre: g('fp_contraparteNombre').value,
+    tipoAcuerdo: g('fp_tipoAcuerdo').value,
+    valorAcuerdo: parseFloat(g('fp_valorAcuerdo')?.value)||0,
+    asistentes: g('fp_asistentes') ? (parseFloat(g('fp_asistentes').value)||0) : 0,
+    ventasReales: g('fp_ventasReales') ? (parseFloat(g('fp_ventasReales').value)||0) : 0,
+    eyEventoId: eyEventoId,
+    vendeEntradasYa: !!eyEventoId,
+    esPromotorInversion: g('fp_esInversion').checked,
+    gastos: S.ui._gastosTmp||[],
+    estado: g('fp_estado').value,
+    notas: g('fp_notas').value
+  };
+  if(S.ui.eventoEditando){
+    await S.fb.updateDoc(S.fb.doc(col('promo_eventos'), S.ui.eventoEditando), datos);
+  } else {
+    await S.fb.addDoc(col('promo_eventos'), datos);
+  }
+  S.ui.eventoEditando = undefined;
+  render();
+}
+
+window.borrarEvento = async function(id){
+  const e = S.eventos.find(x=>x.id===id);
+  if(!confirm(`¿Borrar "${e?.nombre}"?`)) return;
+  await S.fb.deleteDoc(S.fb.doc(col('promo_eventos'), id));
+  render();
+}
+
+/* ===================== DETALLE ===================== */
+window.verDetalleEvento = function(id){ S.ui.eventoDetalleId = id; render(); }
+function modalDetalleEvento(){
+  const e = S.eventos.find(x=>x.id===S.ui.eventoDetalleId); if(!e) return '';
+  const cobro = calcularCobro(e), gastos = calcularGastos(e), beneficio = calcularBeneficio(e);
+  const evEY = eventoEYVinculado(e);
+  return `
+  <div class="modal-bg" onclick="if(event.target===this){ S.ui.eventoDetalleId=null; render(); }">
+    <div class="panel p-6 w-full max-w-xl mt-4">
+      <div class="flex justify-between items-center mb-1">
+        <div class="font-bold text-xl">${esc(e.nombre)}</div>
+        <button class="btn btn-ghost text-xs" onclick="S.ui.eventoDetalleId=null; render();">Cerrar</button>
+      </div>
+      <div class="text-sm mb-4" style="color:var(--ink-dim)">${e.fecha} ${e.hora||''} · ${esc(e.lugar||'')}</div>
+
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="panel2 p-3"><div class="kicker">Contraparte</div><div class="font-semibold">${esc(e.contraparteNombre)}</div><div class="text-xs" style="color:var(--ink-dim)">${esc(e.contraparteTipo)}</div></div>
+        <div class="panel2 p-3"><div class="kicker">Acuerdo</div><div class="font-semibold">${TIPOS_ACUERDO.find(t=>t.v===e.tipoAcuerdo)?.t}</div><div class="text-xs" style="color:var(--ink-dim)">${e.tipoAcuerdo==='porcentaje'?e.valorAcuerdo+'%':e.tipoAcuerdo==='solo_comision_ey'?'':money(e.valorAcuerdo)}</div></div>
+      </div>
+
+      ${e.tipoAcuerdo==='solo_comision_ey' ? `
+        <div class="panel2 p-4 mb-4">
+          <p class="text-sm" style="color:var(--ink-dim)">Sin cobro personal en este evento. El ingreso es la comisión de EntradasYa, ya contabilizada en tu CRM de Ventas.</p>
+        </div>
+      ` : `
+        <div class="panel2 p-4 mb-4">
+          <div class="flex justify-between mb-1"><span>Tu cobro</span><span class="font-bold" style="color:var(--accent)">${money(cobro)}</span></div>
+          ${e.esPromotorInversion?`
+          <div class="flex justify-between mb-1"><span>Gastos</span><span class="font-bold" style="color:var(--danger)">-${money(gastos)}</span></div>
+          <div class="flex justify-between pt-2 border-t" style="border-color:var(--line)"><span class="font-bold">Beneficio neto</span><span class="font-bold" style="${beneficio>=0?'color:var(--accent)':'color:var(--danger)'}">${money(beneficio)}</span></div>
+          `:''}
+        </div>
+      `}
+
+      ${evEY ? `
+        <div class="panel2 p-4 mb-4" style="border-color:var(--accent-dim)">
+          <div class="kicker mb-2">🔗 Vinculado a tu CRM de Ventas online</div>
+          <div class="font-semibold mb-1">${esc(evEY.nombre)}</div>
+          <div class="grid grid-cols-3 gap-3 text-sm mt-2">
+            <div><div class="text-xs" style="color:var(--ink-dim)">Ventas brutas</div><div class="font-bold">${money(evEY.ventasBrutas||0)}</div></div>
+            <div><div class="text-xs" style="color:var(--ink-dim)">Neto EntradasYa</div><div class="font-bold" style="color:var(--accent)">${money(evEY.netoEntradasYa||0)}</div></div>
+            <div><div class="text-xs" style="color:var(--ink-dim)">Estado</div><div class="font-bold">${esc(evEY.estado||'-')}</div></div>
+          </div>
+        </div>
+      ` : ''}
+
+      ${e.notas?`<div class="mb-4 text-sm"><div class="kicker mb-1">Notas</div>${esc(e.notas)}</div>`:''}
+
+      <div class="flex gap-2 flex-wrap">
+        <button class="btn btn-info" onclick="window.open('${urlGoogleCalendar(e)}','_blank')">🗓️ Añadir a Google Calendar</button>
+        <button class="btn btn-ghost" onclick="editarEvento('${e.id}')">✏️ Editar</button>
+        <button class="btn btn-danger" onclick="S.ui.eventoDetalleId=null; borrarEvento('${e.id}')">🗑️ Borrar</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ===================== GOOGLE CALENDAR (sin OAuth, solo enlaces / .ics) ===================== */
+function fechaGCal(fecha, hora, sumarHoras){
+  // fecha: YYYY-MM-DD, hora: HH:MM -> formato YYYYMMDDTHHMMSS (hora local, con ctz=Europe/Madrid)
+  const [h,m] = (hora||'23:00').split(':').map(Number);
+  const d = new Date(fecha+'T00:00:00');
+  d.setHours(h + (sumarHoras||0), m||0, 0, 0);
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}T${p(d.getHours())}${p(d.getMinutes())}00`;
+}
+function urlGoogleCalendar(e){
+  const inicio = fechaGCal(e.fecha, e.hora, 0);
+  const fin = fechaGCal(e.fecha, e.hora, 4); // 4h de duración por defecto
+  const detalles = `Contraparte: ${e.contraparteNombre} (${e.contraparteTipo})%0AAcuerdo: ${TIPOS_ACUERDO.find(t=>t.v===e.tipoAcuerdo)?.t}%0A${e.notas||''}`;
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(e.nombre)}&dates=${inicio}/${fin}&details=${detalles}&location=${encodeURIComponent(e.lugar||'')}&ctz=Europe/Madrid`;
+}
+window.exportarICS = function(){
+  const pad = n => String(n).padStart(2,'0');
+  const dt = (fecha,hora,sumar) => { const [h,m]=(hora||'23:00').split(':').map(Number); const d=new Date(fecha+'T00:00:00'); d.setHours(h+(sumar||0),m||0,0,0); return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`; };
+  let ics = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//MisEventosPromotor//ES\r\n';
+  S.eventos.forEach(e=>{
+    if(!e.fecha) return;
+    ics += `BEGIN:VEVENT\r\nUID:${e.id}@miseventospromotor\r\nDTSTART;TZID=Europe/Madrid:${dt(e.fecha,e.hora,0)}\r\nDTEND;TZID=Europe/Madrid:${dt(e.fecha,e.hora,4)}\r\nSUMMARY:${(e.nombre||'').replace(/\r?\n/g,' ')}\r\nLOCATION:${(e.lugar||'').replace(/\r?\n/g,' ')}\r\nDESCRIPTION:Contraparte: ${e.contraparteNombre} (${e.contraparteTipo})\\n${(e.notas||'').replace(/\r?\n/g,'\\n')}\r\nEND:VEVENT\r\n`;
+  });
+  ics += 'END:VCALENDAR\r\n';
+  const blob = new Blob([ics], {type:'text/calendar'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='mis-eventos-promotor.ics'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ===================== VISTA CALENDARIO ===================== */
+function viewCalendario(){
+  const list = [...S.eventos].filter(e=>e.fecha).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const hoy = todayISO();
+  return `
+  <div class="space-y-6">
+    <div class="panel p-6">
+      <div class="flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-bold mb-1">🗓️ Calendario</h2>
+          <p class="text-sm" style="color:var(--ink-dim)">Botón individual por evento, o exporta todos de golpe a un archivo que importas una vez en Google Calendar.</p>
+        </div>
+        <button class="btn btn-accent" onclick="exportarICS()">⬇️ Exportar todos (.ics)</button>
+      </div>
+    </div>
+    <div class="panel overflow-hidden">
+      <table>
+        <thead><tr><th>Fecha</th><th>Evento</th><th>Lugar</th><th>Contraparte</th><th></th></tr></thead>
+        <tbody>
+        ${list.length? list.map(e=>`
+          <tr class="${e.fecha<hoy?'':''}">
+            <td>${e.fecha<hoy?'<span style="color:var(--ink-dim)">'+e.fecha+'</span>':e.fecha} ${e.hora||''}</td>
+            <td class="font-semibold">${esc(e.nombre)}</td>
+            <td>${esc(e.lugar||'-')}</td>
+            <td>${esc(e.contraparteNombre)}</td>
+            <td><button class="btn btn-info" style="padding:.3rem .6rem;font-size:.72rem" onclick="window.open('${urlGoogleCalendar(e)}','_blank')">+ Google Calendar</button></td>
+          </tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim);text-align:center;padding:2rem">Sin eventos con fecha.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+/* ===================== RESUMEN ===================== */
+function viewResumen(){
+  const activos = S.eventos.filter(e=>e.estado!=='Cancelado');
+  const totalCobro = activos.reduce((s,e)=>s+calcularCobro(e),0);
+  const totalGastos = activos.reduce((s,e)=>s+calcularGastos(e),0);
+  const beneficio = totalCobro - totalGastos;
+  const porTipo = {};
+  TIPOS_CONTRAPARTE.forEach(t=> porTipo[t] = activos.filter(e=>e.contraparteTipo===t).length);
+  return `
+  <div class="space-y-6">
+    <h2 class="text-xl font-bold">📊 Resumen (eventos no cancelados)</h2>
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="panel p-5"><div class="kicker mb-1">Total cobrado (acuerdos)</div><div class="stat-num" style="color:var(--accent)">${money(totalCobro)}</div></div>
+      <div class="panel p-5"><div class="kicker mb-1">Gastos (eventos con inversión)</div><div class="stat-num" style="color:var(--danger)">${money(totalGastos)}</div></div>
+      <div class="panel p-5"><div class="kicker mb-1">Beneficio neto</div><div class="stat-num" style="${beneficio>=0?'color:var(--accent)':'color:var(--danger)'}">${money(beneficio)}</div></div>
+    </div>
+    <div class="panel p-5">
+      <div class="kicker mb-3">Eventos por tipo de contraparte</div>
+      <div class="grid md:grid-cols-3 gap-4">
+        ${TIPOS_CONTRAPARTE.map(t=>`<div class="panel2 p-4"><div class="text-sm" style="color:var(--ink-dim)">${t}</div><div class="text-2xl font-bold">${porTipo[t]}</div></div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ===================== INICIO ===================== */
+window.addEventListener('fb-ready', render);
+if(window.__fb) render();
+</script>
+</body>
+</html>
