@@ -60,9 +60,16 @@ const S = {
   session: JSON.parse(localStorage.getItem('ey_session')||'null'),
   comerciales:[], clientes:[], eventos:[], contactos:[], comisiones:[], logs:[],
   listenersOn:false,
-  ui:{ view:'dashboard', clienteFiltro:{q:'',comercial:'',estado:'',tipo:'',prioridad:''}, clienteDetalleId:null, clienteDetalleTab:'comisiones', importStep:0, importRows:[], importDupes:[], showPasswordForm:false }
+  ui:{ view:'dashboard', clienteFiltro:{q:'',comercial:'',estado:'',tipo:'',prioridad:'',investigacion:''}, clienteDetalleId:null, clienteDetalleTab:'investigacion', importStep:0, importRows:[], importDupes:[], showPasswordForm:false, clientesPage:0, clientesPageSize:100 }
 };
-const PCT = 0.04;
+const PCT_ADMIN = 0.075; // tu comisión como comercial/administrador, sobre los clientes sin asignar
+const PCT_COMERCIAL_DEFECTO = 0.04; // comisión por defecto de cada comercial, editable por persona
+function tasaComision(c){
+  if(!c || !c.comercialId) return PCT_ADMIN;
+  const cm = S.comerciales.find(x=>x.id===c.comercialId);
+  const pct = cm && cm.pctComision!=null ? Number(cm.pctComision) : (PCT_COMERCIAL_DEFECTO*100);
+  return pct/100;
+}
 const money = n => (isFinite(n)?n:0).toLocaleString('es-ES',{style:'currency',currency:'EUR',maximumFractionDigits:0});
 const numf = n => (isFinite(n)?n:0).toLocaleString('es-ES');
 const fdate = d => { if(!d) return '-'; const dt = (d instanceof Date)? d : new Date(d); if(isNaN(dt)) return '-'; return dt.toLocaleDateString('es-ES'); };
@@ -81,7 +88,7 @@ function calcPotencial(c){
   const ks = S.comisiones.filter(k=>k.clienteId===c.id);
   const entradasAnuales = ks.reduce((a,k)=>a+(Number(k.entradas)||0),0);
   const ventasAnuales = ks.reduce((a,k)=>a+(Number(k.valorTotal)||0),0);
-  const retornoAnual = ventasAnuales*PCT;
+  const retornoAnual = ventasAnuales*tasaComision(c);
   const retornoMensual = retornoAnual/12;
   return {entradasAnuales, ventasAnuales, retornoAnual, retornoMensual};
 }
@@ -117,7 +124,95 @@ function startListeners(){
   // (crm2_eventos ya no se usa: los eventos/comisiones reales viven en crm2_comisiones)
   S.fb.onSnapshot(col('crm2_contactos'), snap=>{ S.contactos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
   S.fb.onSnapshot(col('crm2_comisiones'), snap=>{ S.comisiones = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
-  S.fb.onSnapshot(col('crm2_log'), snap=>{ S.logs = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fechaHora||'').localeCompare(a.fechaHora||'')); render(); });
+  S.fb.onSnapshot(col('crm2_log'), snap=>{
+    S.logs = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fechaHora||'').localeCompare(a.fechaHora||''));
+    if(isOwner() && S._logsCargados){
+      snap.docChanges().forEach(ch=>{
+        if(ch.type==='added'){
+          const l = ch.doc.data();
+          if(ACCIONES_CONTACTO.has(l.accion) && l.email!==S.session.email){
+            notificarEscritorio(l.accion, `${l.usuario}: ${l.detalle||''}`);
+          }
+        }
+      });
+    }
+    S._logsCargados = true;
+    render();
+  });
+  if(isOwner() && typeof Notification!=='undefined' && Notification.permission==='default'){
+    Notification.requestPermission();
+  }
+}
+function notificarEscritorio(titulo, cuerpo){
+  try{
+    if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+      new Notification('CRM EntradasYa — '+titulo, {body:cuerpo});
+    }
+  }catch(e){}
+}
+const ACCIONES_CONTACTO = new Set([
+  'Cliente creado','Cliente editado','Cliente eliminado','Eliminación múltiple de clientes','Reasignación de cliente',
+  'Ficha importada (actualiza todos los datos del cliente)','Ficha importada (cliente nuevo)',
+  'Ficha importada desde la ficha del cliente (datos de contacto + investigación)',
+  'Investigación comercial guardada','Aviso de comercial','Registro de historial eliminado','Registro de venta eliminado'
+]);
+
+/* ===================== NOTIFICACIONES (solo admin) ===================== */
+function clientesSinEventos(){
+  const estadosVigilar = ['Cliente activo','Cliente recurrente','Primer evento'];
+  const hoy = new Date();
+  return S.clientes.filter(c=>estadosVigilar.includes(c.estado)).map(c=>{
+    const ventas = S.comisiones.filter(k=>k.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+    const ref = ventas[0]?.fecha || c.fechaAlta;
+    if(!ref) return null;
+    const dias = Math.floor((hoy - new Date(ref)) / 86400000);
+    return dias>60 ? {c, dias, ref} : null;
+  }).filter(Boolean).sort((a,b)=>b.dias-a.dias);
+}
+function comercialesInactivos(){
+  const hoy = new Date();
+  return S.comerciales.map(cm=>{
+    const suyos = S.logs.filter(l=>l.email===cm.email);
+    const ultimo = suyos[0]; // S.logs ya viene ordenado desc por fecha
+    const dias = ultimo ? Math.floor((hoy - new Date(ultimo.fechaHora)) / 86400000) : null;
+    return (dias===null || dias>7) ? {cm, dias} : null;
+  }).filter(Boolean).sort((a,b)=>(b.dias??9999)-(a.dias??9999));
+}
+function contarNotificaciones(){
+  return clientesSinEventos().length + comercialesInactivos().length;
+}
+function viewNotificaciones(){
+  const sinEventos = clientesSinEventos();
+  const inactivos = comercialesInactivos();
+  return `
+  <h2 class="text-xl font-bold mb-1">🔔 Notificaciones</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Avisos automáticos calculados en vivo con los datos actuales.</p>
+
+  <div class="panel p-4 mb-5">
+    <div class="font-bold mb-3">⏰ Clientes activos sin eventos hace más de 2 meses (${sinEventos.length})</div>
+    ${sinEventos.length? `<div class="overflow-x-auto"><table>
+      <thead><tr><th>Cliente</th><th>Estado</th><th>Comercial</th><th>Última referencia</th><th>Días sin evento</th></tr></thead>
+      <tbody>${sinEventos.map(x=>`<tr class="row" onclick="openCliente('${x.c.id}')">
+        <td class="font-semibold">${esc(x.c.nombreEmpresa)}</td>
+        <td>${esc(x.c.estado)}</td>
+        <td style="color:var(--ink-dim)">${esc(nombreComercial(x.c.comercialId))}</td>
+        <td>${fdate(x.ref)}</td>
+        <td style="color:var(--danger);font-weight:700">${x.dias} días</td>
+      </tr>`).join('')}</tbody>
+    </table></div>` : `<p class="text-sm" style="color:var(--ink-dim)">Ninguno, todo al día.</p>`}
+  </div>
+
+  <div class="panel p-4">
+    <div class="font-bold mb-3">👤 Comerciales sin actividad hace más de 1 semana (${inactivos.length})</div>
+    ${inactivos.length? `<div class="overflow-x-auto"><table>
+      <thead><tr><th>Comercial</th><th>Email</th><th>Última actividad</th></tr></thead>
+      <tbody>${inactivos.map(x=>`<tr>
+        <td class="font-semibold">${esc(x.cm.nombre)}</td>
+        <td style="color:var(--ink-dim)">${esc(x.cm.email)}</td>
+        <td style="color:var(--danger);font-weight:700">${x.dias==null?'Nunca ha tenido actividad':x.dias+' días'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>` : `<p class="text-sm" style="color:var(--ink-dim)">Todos activos esta semana.</p>`}
+  </div>`;
 }
 
 /* ===================== LOG DE ACTIVIDAD ===================== */
@@ -245,21 +340,27 @@ const OWNER_EMAIL = 'danielgomezgarcia1980@gmail.com';
 function isOwner(){ return S.session && S.session.email===OWNER_EMAIL; }
 function misClientes(){
   if(isAdmin()) return S.clientes;
-  // Cada comercial ve sus propios clientes asignados + el "pool" de contactos sin asignar todavía.
-  // En cuanto uno de ellos edita un contacto sin asignar, se le asigna automáticamente (ver saveCliente)
-  // y deja de ser visible/editable para el resto.
-  return S.clientes.filter(c=>c.comercialId===S.session.comercialId || !c.comercialId);
+  // Solo los clientes que tiene asignados el admin + los que él mismo ha creado (vía ficha).
+  // Ya NO incluye el "pool" de sin asignar: eso ahora es solo del administrador.
+  return S.clientes.filter(c=>c.comercialId===S.session.comercialId || c.creadoPor===S.session.userId);
 }
-function puedeEditar(c){
+function puedeAbrir(c){
   if(!c) return false;
   if(isAdmin()) return true;
-  return !c.comercialId || c.comercialId===S.session.comercialId;
+  return c.comercialId===S.session.comercialId || c.creadoPor===S.session.userId;
+}
+function puedeEditar(c){
+  // Editar la FICHA del contacto (nombre/teléfono/email/...) es SOLO del administrador.
+  // Los comerciales solo pueden crear/actualizar contactos subiendo una ficha comercial (.txt).
+  return isAdmin();
 }
 function viewApp(){
   const nav = [
     ['dashboard','Panel'],['clientes','Clientes'],['seguimientos','Seguimientos'],
-    ['comisiones','Comisiones'], ...(isAdmin()?[['comerciales','Comerciales'],['importar','Importar / Exportar']]:[]),
-    ...(isOwner()?[['actividad','Actividad']]:[])
+    ...(isAdmin()?[['comisiones','Comisiones']]:[]),
+    ['comerciales','Comerciales'],
+    ...(isAdmin()?[['importar','Importar / Exportar']]:[]),
+    ...(isOwner()?[['notificaciones','🔔 Notificaciones'],['actividad','Actividad']]:[])
   ];
   return `
   <div class="flex min-h-screen">
@@ -269,7 +370,7 @@ function viewApp(){
         <div class="kicker">CRM comercial</div>
       </div>
       <nav class="space-y-1 flex-1">
-        ${nav.map(([k,l])=>`<div class="navitem ${S.ui.view===k?'active':''}" onclick="setView('${k}')">${l}</div>`).join('')}
+        ${nav.map(([k,l])=>`<div class="navitem ${S.ui.view===k?'active':''}" onclick="setView('${k}')">${l}${k==='notificaciones'&&contarNotificaciones()>0?` <span class="badge" style="background:var(--danger);color:#fff">${contarNotificaciones()}</span>`:''}</div>`).join('')}
       </nav>
       <div class="pt-4 border-t" style="border-color:var(--line)">
         <div class="text-sm font-semibold">${S.session.nombre||S.session.email}</div>
@@ -282,9 +383,10 @@ function viewApp(){
       ${ S.ui.view==='dashboard' ? viewDashboard() :
          S.ui.view==='clientes' ? viewClientes() :
          S.ui.view==='seguimientos' ? viewSeguimientos() :
-         S.ui.view==='comisiones' ? viewComisiones() :
+         S.ui.view==='comisiones' ? (isAdmin()?viewComisiones():'') :
          S.ui.view==='comerciales' ? viewComerciales() :
-         S.ui.view==='importar' ? viewImportar() :
+         S.ui.view==='importar' ? (isAdmin()?viewImportar():'') :
+         S.ui.view==='notificaciones' ? (isOwner()?viewNotificaciones():'') :
          S.ui.view==='actividad' ? viewActividad() : '' }
     </main>
   </div>
@@ -371,14 +473,14 @@ function viewDashboard(){
   </div>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
     ${stat('Ventas potenciales / año', money(ventasPotTotal))}
-    ${stat('Retorno potencial / año (4%)', money(retornoPotTotal),'#3ecf8e')}
+    ${stat('Retorno potencial / año', money(retornoPotTotal),'#3ecf8e')}
     ${stat('Retorno potencial / mes', money(retornoPotTotal/12))}
   </div>
   <div class="panel p-4">
     <div class="font-bold mb-3">Ranking de clientes por potencial económico</div>
     <div class="overflow-x-auto">
     <table>
-      <thead><tr><th>Cliente</th><th>Tipo</th><th>Ventas/año</th><th>Retorno 4%/año</th><th>Prioridad</th></tr></thead>
+      <thead><tr><th>Cliente</th><th>Tipo</th><th>Ventas/año</th><th>Retorno/año</th><th>Prioridad</th></tr></thead>
       <tbody>
         ${ranking.length? ranking.map(c=>`
           <tr class="row" onclick="openCliente('${c.id}')">
@@ -392,7 +494,7 @@ function viewDashboard(){
     </table>
     </div>
   </div>
-  ${isAdmin()? viewRendimientoComerciales() : ''}
+  ${viewRendimientoComerciales()}
   `;
 }
 function viewRendimientoComerciales(){
@@ -400,11 +502,14 @@ function viewRendimientoComerciales(){
   const rows = S.comerciales.map(cm=>{
     const propios = S.clientes.filter(c=>c.comercialId===cm.id);
     const conseguidos = propios.filter(c=>['Cliente activo','Cliente recurrente','Primer evento'].includes(c.estado)).length;
-    const ventas = S.comisiones.filter(k=>propios.some(p=>p.id===k.clienteId)).reduce((a,k)=>a+Number(k.valorTotal||0),0);
-    const comision = ventas*PCT;
+    const ventasComisiones = S.comisiones.filter(k=>propios.some(p=>p.id===k.clienteId));
+    const ventas = ventasComisiones.reduce((a,k)=>a+Number(k.valorTotal||0),0);
+    const nEventos = ventasComisiones.length;
+    const pct = cm.pctComision!=null ? Number(cm.pctComision) : PCT_COMERCIAL_DEFECTO*100;
+    const comision = ventas*(pct/100);
     const porEstado = {};
     ESTADOS_RANKING.forEach(e=> porEstado[e] = propios.filter(c=>c.estado===e).length);
-    return {cm, propios:propios.length, conseguidos, ventas, comision, porEstado};
+    return {cm, propios:propios.length, conseguidos, ventas, comision, pct, nEventos, porEstado};
   });
   const ranking = [...rows].sort((a,b)=>b.ventas-a.ventas);
 
@@ -413,16 +518,17 @@ function viewRendimientoComerciales(){
     <div class="font-bold mb-3">Ranking de comerciales</div>
     <div class="overflow-x-auto">
     <table>
-      <thead><tr><th>#</th><th>Comercial</th>${ESTADOS_RANKING.map(e=>`<th>${e}</th>`).join('')}<th>Clientes conseguidos</th><th>Ventas generadas</th><th>Comisión (4%)</th></tr></thead>
+      <thead><tr><th>#</th><th>Comercial</th>${ESTADOS_RANKING.map(e=>`<th>${e}</th>`).join('')}<th>Clientes conseguidos</th><th>Eventos con ventas</th><th>Ventas generadas</th><th>Comisión</th></tr></thead>
       <tbody>
       ${ranking.length? ranking.map((r,i)=>`<tr${i===0?' style="background:var(--panel-2,rgba(62,207,142,.08))"':''}>
           <td class="font-bold">${i+1}º</td>
           <td class="font-semibold">${esc(r.cm.nombre)}</td>
           ${ESTADOS_RANKING.map(e=>`<td style="text-align:center">${r.porEstado[e]}</td>`).join('')}
           <td>${r.conseguidos}</td>
+          <td style="text-align:center">${r.nEventos}</td>
           <td class="font-semibold">${money(r.ventas)}</td>
-          <td>${money(r.comision)}</td>
-        </tr>`).join('') : `<tr><td colspan="${4+ESTADOS_RANKING.length}" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}
+          <td>${money(r.comision)} <span class="text-xs" style="color:var(--ink-dim)">(${r.pct}%)</span></td>
+        </tr>`).join('') : `<tr><td colspan="${5+ESTADOS_RANKING.length}" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}
       </tbody>
     </table>
     </div>
@@ -432,47 +538,62 @@ function viewRendimientoComerciales(){
 /* ===================== CLIENTES ===================== */
 function viewClientes(){
   const f = S.ui.clienteFiltro;
-  let cs = misClientes().map(c=>({...c,...calcPotencial(c)}));
+  let cs = S.clientes.map(c=>({...c,...calcPotencial(c)}));
   if(f.q) cs = cs.filter(c=> [c.nombreEmpresa,c.personaContacto,c.telefono,c.email,c.ciudad].join(' ').toLowerCase().includes(f.q.toLowerCase()));
   if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
   if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
   if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
   if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  if(f.investigacion==='hecha') cs = cs.filter(c=>!!c.investigacion);
+  if(f.investigacion==='pendiente') cs = cs.filter(c=>!c.investigacion);
   cs.sort((a,b)=>b.retornoAnual-a.retornoAnual);
 
   const comercialOpt = cm => `<option value="${cm.id}" ${f.comercial===cm.id?'selected':''}>${esc(cm.nombre)}</option>`;
   const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
-  const visibleIds = cs.map(c=>c.id);
+
+  const pageSize = S.ui.clientesPageSize || 100;
+  const totalPaginas = Math.max(1, Math.ceil(cs.length/pageSize));
+  if(S.ui.clientesPage==null) S.ui.clientesPage = 0;
+  if(S.ui.clientesPage >= totalPaginas) S.ui.clientesPage = totalPaginas-1;
+  const pagina = cs.slice(S.ui.clientesPage*pageSize, (S.ui.clientesPage+1)*pageSize);
+  const visibleIds = pagina.map(c=>c.id);
   const allSelected = visibleIds.length>0 && visibleIds.every(id=>sel.has(id));
 
   return `
   <div class="flex items-center justify-between mb-5">
     <div>
       <h2 class="text-xl font-bold">Clientes</h2>
-      <p class="text-sm" style="color:var(--ink-dim)">${cs.length} resultado(s)${sel.size?` · ${sel.size} seleccionado(s)`:''}</p>
+      <p class="text-sm" style="color:var(--ink-dim)">${cs.length} resultado(s)${sel.size?` · ${sel.size} seleccionado(s)`:''}${!isAdmin()?' · solo puedes abrir los tuyos (asignados o creados por ti)':''}</p>
     </div>
     <div class="flex gap-2">
       ${isAdmin() && sel.size ? `<button class="btn btn-danger" onclick="deleteSelectedClientes()">Eliminar seleccionados (${sel.size})</button>` : ''}
       <label class="btn btn-ghost" style="cursor:pointer">📤 Subir ficha comercial (.txt)<input type="file" accept=".txt" style="display:none" onchange="importarFichaGlobal(event)"></label>
-      <button class="btn btn-accent" onclick="openClienteForm()">+ Nuevo cliente</button>
+      ${isAdmin()?`<button class="btn btn-accent" onclick="openClienteForm()">+ Nuevo cliente</button>`:''}
     </div>
   </div>
-  <div class="panel p-3 mb-4 grid grid-cols-2 md:grid-cols-6 gap-2">
+  <div class="panel p-3 mb-4 grid grid-cols-2 md:grid-cols-7 gap-2">
     <input class="md:col-span-2" placeholder="Buscar nombre, contacto, tel, email, ciudad" value="${esc(f.q)}" oninput="setFiltro('q',this.value)">
     ${isAdmin()?`<select onchange="setFiltro('comercial',this.value)"><option value="">Comercial: todos</option>${S.comerciales.map(comercialOpt).join('')}</select>`:''}
     <select onchange="setFiltro('estado',this.value)"><option value="">Estado: todos</option>${ESTADOS.map(e=>`<option ${f.estado===e?'selected':''}>${e}</option>`).join('')}</select>
     <select onchange="setFiltro('tipo',this.value)"><option value="">Tipo: todos</option>${TIPOS.map(t=>`<option ${f.tipo===t?'selected':''}>${t}</option>`).join('')}</select>
     <select onchange="setFiltro('prioridad',this.value)"><option value="">Prioridad: todas</option>${PRIORIDADES.map(p=>`<option ${f.prioridad===p?'selected':''}>${p}</option>`).join('')}</select>
+    <select onchange="setFiltro('investigacion',this.value)">
+      <option value="">Investigación: todas</option>
+      <option value="hecha" ${f.investigacion==='hecha'?'selected':''}>🔎 Hecha</option>
+      <option value="pendiente" ${f.investigacion==='pendiente'?'selected':''}>Pendiente</option>
+    </select>
   </div>
   <div class="panel p-4">
     <div class="overflow-x-auto">
     <table>
       <thead><tr>${isAdmin()?`<th style="width:40px;padding:.5rem"><input type="checkbox" onclick="event.stopPropagation();toggleSelectAllClientes(this.checked)" ${allSelected?'checked':''}></th>`:''}<th>Empresa</th><th>Contacto</th><th>Población</th><th>Tipo</th><th>Estado</th>${isAdmin()?'<th>Comercial</th>':''}<th>Retorno</th><th>Prioridad</th><th>Próx. seguim.</th></tr></thead>
       <tbody>
-      ${cs.length? cs.map(c=>`
-        <tr class="row" onclick="openCliente('${c.id}')">
+      ${pagina.length? pagina.map(c=>{
+        const abrible = puedeAbrir(c);
+        return `
+        <tr class="${abrible?'row':''}" ${abrible?`onclick="openCliente('${c.id}')"`:''} style="${abrible?'':'opacity:.45;cursor:not-allowed'}" ${abrible?'':'title="No asignado a ti"'}>
           ${isAdmin()?`<td onclick="event.stopPropagation()" style="padding:.5rem;text-align:center"><input type="checkbox" onclick="toggleSelectCliente('${c.id}',this.checked)" ${sel.has(c.id)?'checked':''}></td>`:''}
-          <td class="font-semibold">${esc(c.nombreEmpresa)} ${c.investigacion?'<span title="Investigación comercial registrada" style="color:var(--info)">🔎</span>':''}</td>
+          <td class="font-semibold">${abrible?'':'🔒 '}${esc(c.nombreEmpresa)} ${c.investigacion?'<span title="Investigación comercial registrada" style="color:var(--info)">🔎</span>':''}</td>
           <td style="color:var(--ink-dim)">${esc(c.personaContacto||'-')}</td>
           <td style="color:var(--ink-dim)">${esc(c.ciudad||'-')}</td>
           <td>${esc(c.tipoCliente||'-')}</td>
@@ -481,13 +602,26 @@ function viewClientes(){
           <td>${money(c.retornoAnual)}</td>
           <td><span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad||'-'}</span></td>
           <td style="color:var(--ink-dim)">${fdate(c.proximoSeguimiento)}</td>
-        </tr>`).join('') : `<tr><td colspan="10" style="color:var(--ink-dim)">Sin resultados. Ajusta los filtros o crea un cliente.</td></tr>`}
+        </tr>`;
+      }).join('') : `<tr><td colspan="10" style="color:var(--ink-dim)">Sin resultados. Ajusta los filtros o crea un cliente.</td></tr>`}
       </tbody>
     </table>
     </div>
+    <div class="flex items-center justify-between mt-4 pt-3 border-t" style="border-color:var(--line)">
+      <div class="text-xs" style="color:var(--ink-dim)">Página ${S.ui.clientesPage+1} de ${totalPaginas} · mostrando ${pagina.length} de ${cs.length}</div>
+      <div class="flex gap-2 items-center">
+        <select onchange="S.ui.clientesPageSize=parseInt(this.value); S.ui.clientesPage=0; render();" style="width:auto">
+          <option value="50" ${pageSize===50?'selected':''}>50 por página</option>
+          <option value="100" ${pageSize===100?'selected':''}>100 por página</option>
+          <option value="250" ${pageSize===250?'selected':''}>250 por página</option>
+        </select>
+        <button class="btn btn-ghost text-xs" ${S.ui.clientesPage===0?'disabled':''} onclick="S.ui.clientesPage--; render();">← Anterior</button>
+        <button class="btn btn-ghost text-xs" ${S.ui.clientesPage>=totalPaginas-1?'disabled':''} onclick="S.ui.clientesPage++; render();">Siguiente →</button>
+      </div>
+    </div>
   </div>`;
 }
-window.setFiltro = function(k,v){ S.ui.clienteFiltro[k]=v; render(); }
+window.setFiltro = function(k,v){ S.ui.clienteFiltro[k]=v; S.ui.clientesPage=0; render(); }
 window.asignarComercialRapido = async function(clienteId,comercialId){
   if(!isAdmin()) return;
   const c = S.clientes.find(x=>x.id===clienteId);
@@ -497,8 +631,8 @@ window.asignarComercialRapido = async function(clienteId,comercialId){
 function nombreComercial(id){ const c = S.comerciales.find(x=>x.id===id); return c?c.nombre:'Sin asignar'; }
 window.openCliente = function(id){
   const c = S.clientes.find(x=>x.id===id);
-  if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; }
-  S.ui.clienteDetalleId=id; S.ui.clienteDetalleTab='comisiones'; render();
+  if(!puedeAbrir(c)){ alert('Este contacto no está asignado a ti ni lo has creado tú. Solo puedes trabajar con tus clientes asignados o los que tú mismo añadas.'); return; }
+  S.ui.clienteDetalleId=id; S.ui.clienteDetalleTab='investigacion'; render();
 }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
@@ -543,6 +677,10 @@ window.importarFichaGlobal = function(event){
     const d = parsearFichaTxt(e.target.result);
     if(!d.nombreEmpresa){ alert('El archivo no tiene una línea "EMPRESA: ...", no se puede identificar el cliente.'); return; }
     const existente = S.clientes.find(c => c.nombreEmpresa.trim().toLowerCase() === d.nombreEmpresa.trim().toLowerCase());
+    if(existente && !isAdmin() && !puedeAbrir(existente)){
+      alert(`"${existente.nombreEmpresa}" ya existe en el CRM pero no está asignado a ti ni lo creaste tú. No puedes modificarlo; avisa al administrador si crees que debería ser tuyo.`);
+      event.target.value = ''; return;
+    }
     const investigacion = { naturaleza:d.naturaleza, tamano:d.tamano, actividad:d.actividad, situacion:d.situacion, oportunidad:d.oportunidad, puntoEntrada:d.puntoEntrada, observaciones:d.observaciones, fecha:todayISO() };
     let idFinal, modo;
     if(existente){
@@ -567,7 +705,7 @@ window.importarFichaGlobal = function(event){
         nombreEmpresa: d.nombreEmpresa, personaContacto:d.personaContacto, tipoCliente:d.tipoCliente||'Otro',
         telefono:d.telefono, whatsapp:d.whatsapp, email:d.email, instagram:d.instagram, web:d.web,
         estado:'Nuevo', prioridad:'BAJO', ciudad:d.ciudad, provincia:d.provincia,
-        comercialId: isAdmin()? null : S.session.comercialId,
+        comercialId: null, creadoPor: S.session.userId,
         fechaAlta: todayISO(), investigacion
       };
       const ref = await S.fb.addDoc(col('crm2_clientes'), nuevo);
@@ -634,7 +772,7 @@ window.importarFichaCliente = function(event){
 
 /* ---- Formulario nuevo/editar cliente ---- */
 window.openClienteForm = function(id){
-  if(id){ const c = S.clientes.find(x=>x.id===id); if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; } }
+  if(!isAdmin()){ alert('Los comerciales no podéis editar la ficha del contacto directamente. Sube una ficha comercial (.txt) actualizada, o avisa al administrador.'); return; }
   S.ui.showClienteForm = id || 'new'; render();
 }
 window.closeClienteForm = function(){ S.ui.showClienteForm = null; render(); }
@@ -669,6 +807,7 @@ function modalClienteForm(){
   </div>`;
 }
 window.saveCliente = async function(id){
+  if(!isAdmin()){ alert('Los comerciales no podéis editar la ficha del contacto directamente. Sube una ficha comercial (.txt), o avisa al administrador.'); return; }
   const g = k=>document.getElementById('cf_'+k).value;
   const data = {
     nombreEmpresa: g('nombreEmpresa').trim(), personaContacto:g('personaContacto').trim(),
@@ -676,23 +815,9 @@ window.saveCliente = async function(id){
     email:g('email').trim().toLowerCase(), instagram:g('instagram').trim().replace(/^@/,''),
     web:g('web').trim(),
     estado:g('estado'), prioridad:g('prioridad'), ciudad:g('ciudad').trim(), provincia:g('provincia').trim(),
-    comercialId: isAdmin()? (document.getElementById('cf_comercialId').value||null) : S.session.comercialId
+    comercialId: document.getElementById('cf_comercialId').value||null
   };
   if(!data.nombreEmpresa){ alert('El nombre de empresa es obligatorio.'); return; }
-
-  if(!isAdmin()){
-    if(id){
-      // Comprobación anti-carrera: releemos el documento justo antes de guardar por si
-      // otro comercial lo ha reclamado entretanto.
-      const fresh = await S.fb.getDoc(S.fb.doc(col('crm2_clientes'), id));
-      const freshData = fresh.exists() ? fresh.data() : null;
-      if(!freshData || (freshData.comercialId && freshData.comercialId!==S.session.comercialId)){
-        alert('Este contacto acaba de ser asignado a otro comercial. Se han descartado tus cambios.');
-        S.ui.showClienteForm = null; render(); return;
-      }
-    }
-    data.comercialId = S.session.comercialId; // se reclama/mantiene al guardar
-  }
 
   if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), data); logAction('Cliente editado', data.nombreEmpresa); }
   else{ data.fechaAlta = todayISO(); await S.fb.addDoc(col('crm2_clientes'), data); logAction('Cliente creado', data.nombreEmpresa); }
@@ -719,11 +844,14 @@ window.toggleSelectAllClientes = function(checked){
   if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
   if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
   if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  if(f.investigacion==='hecha') cs = cs.filter(c=>!!c.investigacion);
+  if(f.investigacion==='pendiente') cs = cs.filter(c=>!c.investigacion);
   const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
   if(checked) cs.forEach(c=>sel.add(c.id)); else cs.forEach(c=>sel.delete(c.id));
   render();
 }
 window.deleteSelectedClientes = async function(){
+  if(!isAdmin()){ alert('Solo el administrador puede eliminar clientes.'); return; }
   const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
   if(!sel.size) return;
   if(!confirm(`¿Eliminar ${sel.size} cliente(s) seleccionados? Esta acción no se puede deshacer.`)) return;
@@ -745,7 +873,7 @@ function modalClienteDetalle(){
   const c = S.clientes.find(x=>x.id===S.ui.clienteDetalleId);
   if(!c){ S.ui.clienteDetalleId=null; return ''; }
   const p = calcPotencial(c);
-  const tabs = [['comisiones','Eventos/Comisiones'],['historial','Historial'],['investigacion','Investigación comercial']];
+  const tabs = [['investigacion','Investigación comercial'],['historial','Historial'],['eventos','Eventos'], ...(isAdmin()?[['comisiones','Comisiones']]:[])];
   return `
   <div class="modal-bg" onclick="if(event.target===this) closeClienteDetalle()">
     <div class="panel p-6 w-full max-w-3xl mt-4">
@@ -755,8 +883,12 @@ function modalClienteDetalle(){
           <div class="text-sm" style="color:var(--ink-dim)">${esc(c.tipoCliente||'-')} · ${esc(c.ciudad||'-')} ${c.provincia?', '+esc(c.provincia):''} · ${nombreComercial(c.comercialId)}</div>
         </div>
         <div class="flex gap-2">
-          <button class="btn btn-ghost text-xs" onclick="openClienteForm('${c.id}')">Editar</button>
-          ${isAdmin()?`<button class="btn btn-danger text-xs" onclick="deleteCliente('${c.id}')">Eliminar</button>`:''}
+          ${isAdmin()?`
+            <button class="btn btn-ghost text-xs" onclick="openClienteForm('${c.id}')">Editar</button>
+            <button class="btn btn-danger text-xs" onclick="deleteCliente('${c.id}')">Eliminar</button>
+          `:`
+            <button class="btn btn-ghost text-xs" onclick="avisarAdmin('${c.id}')">🚨 Avisar al administrador</button>
+          `}
           <button class="btn btn-ghost text-xs" onclick="closeClienteDetalle()">Cerrar</button>
         </div>
       </div>
@@ -768,12 +900,23 @@ function modalClienteDetalle(){
       <div class="flex gap-1 mb-4 border-b pb-2" style="border-color:var(--line)">
         ${tabs.map(([k,l])=>`<div class="tab ${S.ui.clienteDetalleTab===k?'active':''}" onclick="setDetalleTab('${k}')">${l}</div>`).join('')}
       </div>
-      ${ S.ui.clienteDetalleTab==='historial' ? tabHistorial(c) : S.ui.clienteDetalleTab==='investigacion' ? tabInvestigacion(c) : tabComisionesCliente(c) }
+      ${ S.ui.clienteDetalleTab==='historial' ? tabHistorial(c) :
+         S.ui.clienteDetalleTab==='comisiones' ? (isAdmin()?tabComisiones(c):'') :
+         S.ui.clienteDetalleTab==='eventos' ? tabEventos(c) :
+         tabInvestigacion(c) }
     </div>
   </div>`;
 }
 window.closeClienteDetalle = function(){ S.ui.clienteDetalleId=null; render(); }
 window.setDetalleTab = function(t){ S.ui.clienteDetalleTab=t; render(); }
+window.avisarAdmin = async function(clienteId){
+  const c = S.clientes.find(x=>x.id===clienteId);
+  const mensaje = prompt(`¿Qué necesitas que revise el administrador sobre "${c?c.nombreEmpresa:''}"?`);
+  if(mensaje==null || !mensaje.trim()) return;
+  await logAction('Aviso de comercial', `${c?c.nombreEmpresa:clienteId}: ${mensaje.trim()}`);
+  alert('Aviso enviado al administrador.');
+  render();
+}
 
 function tabHistorial(c){
   const hs = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
@@ -792,9 +935,9 @@ function tabHistorial(c){
   </div>
   <div class="overflow-x-auto">
   <table>
-    <thead><tr><th>Fecha</th><th>Tipo</th><th>Resultado</th><th>Comentarios</th><th>Próximo paso</th><th>Próx. seguim.</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Resultado</th><th>Comentarios</th><th>Próximo paso</th><th>Próx. seguim.</th><th></th></tr></thead>
     <tbody>
-    ${hs.length? hs.map(h=>`<tr><td>${fdate(h.fecha)}</td><td>${esc(h.tipo)}</td><td>${esc(h.resultado)}</td><td style="max-width:220px">${esc(h.comentarios||'-')}</td><td>${esc(h.proximoPaso||'-')}</td><td>${fdate(h.proximoSeguimiento)}</td></tr>`).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Sin contactos registrados.</td></tr>`}
+    ${hs.length? hs.map(h=>`<tr><td>${fdate(h.fecha)}</td><td>${esc(h.tipo)}</td><td>${esc(h.resultado)}</td><td style="max-width:220px">${esc(h.comentarios||'-')}</td><td>${esc(h.proximoPaso||'-')}</td><td>${fdate(h.proximoSeguimiento)}</td><td><button class="btn btn-danger text-xs" onclick="deleteHistorial('${h.id}','${c.id}')">🗑️</button></td></tr>`).join('') : `<tr><td colspan="7" style="color:var(--ink-dim)">Sin contactos registrados.</td></tr>`}
     </tbody>
   </table>
   </div>`;
@@ -813,12 +956,21 @@ window.addContacto = async function(clienteId){
   logAction('Contacto registrado', `${c?c.nombreEmpresa:clienteId} · ${tipo} · ${resultado}`);
   render();
 }
+window.deleteHistorial = async function(id, clienteId){
+  const c = S.clientes.find(x=>x.id===clienteId);
+  if(!puedeAbrir(c)){ alert('No tienes acceso a este cliente.'); return; }
+  if(!confirm('¿Eliminar este registro del historial (próximo paso incluido)?')) return;
+  await S.fb.deleteDoc(S.fb.doc(col('crm2_contactos'), id));
+  logAction('Registro de historial eliminado', c?c.nombreEmpresa:clienteId);
+  render();
+}
 
-function tabComisionesCliente(c){
-  const ks = S.comisiones.filter(k=>k.clienteId===c.id);
+/* ---- Eventos (registro de ventas) y Comisiones (cálculo, solo admin) ---- */
+function tabEventos(c){
+  const ks = S.comisiones.filter(k=>k.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
   return `
   <div class="panel2 p-4 mb-4">
-    <div class="font-semibold text-sm mb-2">Registrar venta / comisión</div>
+    <div class="font-semibold text-sm mb-2">Registrar venta / evento</div>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
       <div><label>Evento</label><input id="km_evento" placeholder="Nombre del evento"></div>
       <div><label>Entradas vendidas</label><input id="km_entradas" type="number" min="0"></div>
@@ -828,9 +980,9 @@ function tabComisionesCliente(c){
   </div>
   <div class="overflow-x-auto">
   <table>
-    <thead><tr><th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Comisión comercial 4%</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Evento</th><th>Entradas</th><th>Valor vendido</th><th></th></tr></thead>
     <tbody>
-    ${ks.length? ks.map(k=>`<tr><td class="font-semibold">${esc(k.evento)}</td><td>${numf(k.entradas)}</td><td>${money(k.valorTotal)}</td><td>${money(k.valorTotal*PCT)}</td></tr>`).join('') : `<tr><td colspan="4" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}
+    ${ks.length? ks.map(k=>`<tr><td style="color:var(--ink-dim)">${fdate(k.fecha)}</td><td class="font-semibold">${esc(k.evento)}</td><td>${numf(k.entradas)}</td><td>${money(k.valorTotal)}</td><td>${isAdmin()?`<button class="btn btn-danger text-xs" onclick="deleteComision('${k.id}','${c.id}')">🗑️</button>`:''}</td></tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}
     </tbody>
   </table>
   </div>`;
@@ -844,6 +996,37 @@ window.addComision = async function(clienteId){
   const c = S.clientes.find(x=>x.id===clienteId);
   logAction('Comisión registrada', `${c?c.nombreEmpresa:clienteId} · ${evento} · ${money(valorTotal)}`);
   render();
+}
+window.deleteComision = async function(id, clienteId){
+  if(!isAdmin()){ alert('Solo el administrador puede eliminar registros de venta.'); return; }
+  if(!confirm('¿Eliminar este registro de venta? Afecta a la comisión calculada.')) return;
+  await S.fb.deleteDoc(S.fb.doc(col('crm2_comisiones'), id));
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Registro de venta eliminado', c?c.nombreEmpresa:clienteId);
+  render();
+}
+function tabComisiones(c){
+  const ks = S.comisiones.filter(k=>k.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const tasa = tasaComision(c);
+  const totalVentas = ks.reduce((a,k)=>a+Number(k.valorTotal||0),0);
+  const totalComision = totalVentas*tasa;
+  return `
+  <div class="panel2 p-4 mb-4">
+    <div class="kicker mb-1">Comisión aplicada a este cliente</div>
+    <div class="font-semibold">${c.comercialId? esc(nombreComercial(c.comercialId)) : 'Tú (administrador, sin asignar)'} · ${(tasa*100).toFixed(2)}%</div>
+    <div class="grid grid-cols-2 gap-3 mt-3">
+      <div><div class="text-xs" style="color:var(--ink-dim)">Total vendido</div><div class="text-xl font-bold">${money(totalVentas)}</div></div>
+      <div><div class="text-xs" style="color:var(--ink-dim)">Comisión total</div><div class="text-xl font-bold" style="color:var(--accent)">${money(totalComision)}</div></div>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table>
+    <thead><tr><th>Evento</th><th>Valor vendido</th><th>Comisión (${(tasa*100).toFixed(2)}%)</th></tr></thead>
+    <tbody>
+    ${ks.length? ks.map(k=>`<tr><td class="font-semibold">${esc(k.evento)}</td><td>${money(k.valorTotal)}</td><td>${money(k.valorTotal*tasa)}</td></tr>`).join('') : `<tr><td colspan="3" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}
+    </tbody>
+  </table>
+  </div>`;
 }
 
 /* ===================== SEGUIMIENTOS ===================== */
@@ -912,7 +1095,7 @@ function viewSeguimientos(){
 }
 window.marcarSeguimientoHecho = async function(id){
   const c = S.clientes.find(x=>x.id===id);
-  if(!puedeEditar(c)){ alert('Este contacto ya está asignado a otro comercial.'); return; }
+  if(!puedeAbrir(c)){ alert('Este contacto no está asignado a ti.'); return; }
   await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), {proximoSeguimiento:'', ultimoContacto:todayISO()});
   logAction('Seguimiento marcado como hecho', c?c.nombreEmpresa:id);
   render();
@@ -920,56 +1103,118 @@ window.marcarSeguimientoHecho = async function(id){
 
 /* ===================== COMISIONES ===================== */
 function viewComisiones(){
-  const cs = misClientes();
-  const rows = S.comisiones.filter(k=>cs.some(c=>c.id===k.clienteId)).map(k=>{
-    const c = S.clientes.find(x=>x.id===k.clienteId);
-    return {...k, cliente:c};
-  }).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
-  const totalVentas = rows.reduce((a,r)=>a+Number(r.valorTotal||0),0);
+  if(!isAdmin()) return '<p style="color:var(--ink-dim)">No tienes acceso a esta sección.</p>';
+  const rowsDe = cs => S.comisiones.filter(k=>cs.some(c=>c.id===k.clienteId)).map(k=>({...k, cliente:S.clientes.find(x=>x.id===k.clienteId)})).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+
+  const tuyos = S.clientes.filter(c=>!c.comercialId);
+  const rowsTuyos = rowsDe(tuyos);
+  const totalTuyo = rowsTuyos.reduce((a,r)=>a+Number(r.valorTotal||0),0);
+
+  const bloqueComercial = cm => {
+    const propios = S.clientes.filter(c=>c.comercialId===cm.id);
+    const rows = rowsDe(propios);
+    const total = rows.reduce((a,r)=>a+Number(r.valorTotal||0),0);
+    const pct = cm.pctComision!=null ? Number(cm.pctComision) : PCT_COMERCIAL_DEFECTO*100;
+    return {cm, rows, total, pct, comision: total*(pct/100)};
+  };
+  const bloques = S.comerciales.map(bloqueComercial);
+  const totalGeneral = totalTuyo*PCT_ADMIN + bloques.reduce((a,b)=>a+b.comision,0);
+
+  const tabla = (rows, pct) => `
+    <div class="overflow-x-auto"><table>
+      <thead><tr><th>Fecha</th><th>Cliente</th><th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Comisión (${pct}%)</th></tr></thead>
+      <tbody>${rows.length? rows.map(r=>`<tr>
+        <td>${fdate(r.fecha)}</td><td class="font-semibold">${esc(r.cliente?.nombreEmpresa||'-')}</td>
+        <td>${esc(r.evento)}</td><td>${numf(r.entradas)}</td><td>${money(r.valorTotal)}</td><td>${money(r.valorTotal*(pct/100))}</td></tr>`).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}</tbody>
+    </table></div>`;
+
   return `
   <h2 class="text-xl font-bold mb-1">Comisiones</h2>
-  <p class="text-sm mb-5" style="color:var(--ink-dim)">Ventas registradas y comisión comercial (4% sobre valor vendido).</p>
-  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
-    <div class="panel p-4"><div class="kicker">Ventas totales</div><div class="stat-num">${money(totalVentas)}</div></div>
-    <div class="panel p-4"><div class="kicker">Comisión total (4%)</div><div class="stat-num" style="color:var(--accent)">${money(totalVentas*PCT)}</div></div>
-    <div class="panel p-4"><div class="kicker">Registros</div><div class="stat-num">${numf(rows.length)}</div></div>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Visible solo para ti. Cada comercial tiene su propio % (editable en la pestaña Comerciales); tú, sobre tus clientes sin asignar, cobras el ${(PCT_ADMIN*100)}%.</p>
+  <div class="panel p-4 mb-5"><div class="kicker">Comisión total generada (todos)</div><div class="stat-num" style="color:var(--accent)">${money(totalGeneral)}</div></div>
+
+  <div class="panel p-4 mb-4">
+    <div class="flex justify-between items-center mb-3">
+      <div class="font-bold">Tuyas (clientes sin asignar) · ${(PCT_ADMIN*100)}%</div>
+      <div class="text-sm">Ventas: <b>${money(totalTuyo)}</b> · Comisión: <b style="color:var(--accent)">${money(totalTuyo*PCT_ADMIN)}</b></div>
+    </div>
+    ${tabla(rowsTuyos, PCT_ADMIN*100)}
   </div>
-  <div class="panel p-4"><div class="overflow-x-auto"><table>
-    <thead><tr><th>Fecha</th><th>Cliente</th>${isAdmin()?'<th>Comercial</th>':''}<th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Comisión 4%</th></tr></thead>
-    <tbody>${rows.length? rows.map(r=>`<tr>
-      <td>${fdate(r.fecha)}</td><td class="font-semibold">${esc(r.cliente?.nombreEmpresa||'-')}</td>
-      ${isAdmin()?`<td style="color:var(--ink-dim)">${nombreComercial(r.cliente?.comercialId)}</td>`:''}
-      <td>${esc(r.evento)}</td><td>${numf(r.entradas)}</td><td>${money(r.valorTotal)}</td><td>${money(r.valorTotal*PCT)}</td></tr>`).join('') : `<tr><td colspan="7" style="color:var(--ink-dim)">Sin ventas registradas todavía.</td></tr>`}</tbody>
-  </table></div></div>`;
+
+  ${bloques.map(b=>`
+    <div class="panel p-4 mb-4">
+      <div class="flex justify-between items-center mb-3">
+        <div class="font-bold">${esc(b.cm.nombre)} · ${b.pct}% <button class="btn btn-ghost text-xs ml-2" onclick="editarPctComercial('${b.cm.id}')">editar %</button></div>
+        <div class="text-sm">Ventas: <b>${money(b.total)}</b> · Comisión: <b style="color:var(--accent)">${money(b.comision)}</b></div>
+      </div>
+      ${tabla(b.rows, b.pct)}
+    </div>
+  `).join('')}
+  `;
+}
+window.editarPctComercial = async function(id){
+  const cm = S.comerciales.find(x=>x.id===id);
+  const actual = cm.pctComision!=null ? cm.pctComision : PCT_COMERCIAL_DEFECTO*100;
+  const nuevo = prompt(`Nuevo % de comisión para ${cm.nombre}:`, actual);
+  if(nuevo==null) return;
+  const num = parseFloat(nuevo);
+  if(isNaN(num)||num<0){ alert('Valor no válido.'); return; }
+  await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), {pctComision:num});
+  logAction('% de comisión editado', `${cm.nombre} → ${num}%`);
+  render();
 }
 
-/* ===================== COMERCIALES (admin) ===================== */
+/* ===================== COMERCIALES ===================== */
 function viewComerciales(){
   return `
   <div class="flex items-center justify-between mb-5">
     <div><h2 class="text-xl font-bold">Comerciales</h2><p class="text-sm" style="color:var(--ink-dim)">${S.comerciales.length} en el equipo</p></div>
-    <button class="btn btn-accent" onclick="openComercialForm()">+ Nuevo comercial</button>
+    ${isAdmin()?`<button class="btn btn-accent" onclick="openComercialForm()">+ Nuevo comercial</button>`:''}
   </div>
   <div class="panel p-4"><div class="overflow-x-auto"><table>
-    <thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Estado</th><th>Clientes</th><th></th></tr></thead>
+    <thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Estado</th><th>% Comisión</th><th>Clientes</th>${isAdmin()?'<th></th>':''}</tr></thead>
     <tbody>${S.comerciales.length? S.comerciales.map(cm=>{
       const n = S.clientes.filter(c=>c.comercialId===cm.id).length;
+      const pct = cm.pctComision!=null ? cm.pctComision : PCT_COMERCIAL_DEFECTO*100;
       return `<tr>
         <td class="font-semibold">${esc(cm.nombre)}</td><td>${esc(cm.email)}</td><td>${esc(cm.telefono||'-')}</td>
         <td>${fdate(cm.fechaIncorporacion)}</td>
         <td><span class="badge" style="background:${cm.estado==='activo'?'#26332c':'#332626'};color:${cm.estado==='activo'?'#3ecf8e':'#e0603e'}">${cm.estado}</span></td>
+        <td>${pct}%</td>
         <td><span style="cursor:pointer;text-decoration:underline;color:var(--info)" onclick="verClientesDeComercial('${cm.id}')">${n}</span></td>
-        <td><button class="btn btn-ghost text-xs" onclick="openComercialForm('${cm.id}')">Editar</button></td>
+        ${isAdmin()?`<td><button class="btn btn-ghost text-xs" onclick="openComercialForm('${cm.id}')">Editar</button> <button class="btn btn-danger text-xs" onclick="deleteComercial('${cm.id}')">Eliminar</button></td>`:''}
       </tr>`;
-    }).join('') : `<tr><td colspan="7" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}</tbody>
+    }).join('') : `<tr><td colspan="8" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}</tbody>
   </table></div></div>`;
 }
 window.verClientesDeComercial = function(comercialId){
-  S.ui.clienteFiltro = {q:'',comercial:comercialId,estado:'',tipo:'',prioridad:''};
+  S.ui.clienteFiltro = {q:'',comercial:comercialId,estado:'',tipo:'',prioridad:'',investigacion:''};
+  S.ui.clientesPage = 0;
   S.ui.view='clientes'; render();
 }
-window.openComercialForm = function(id){ S.ui.showComercialForm = id || 'new'; render(); }
+window.openComercialForm = function(id){
+  if(!isAdmin()){ alert('Solo el administrador puede crear o editar comerciales.'); return; }
+  S.ui.showComercialForm = id || 'new'; render();
+}
 window.closeComercialForm = function(){ S.ui.showComercialForm = null; render(); }
+window.deleteComercial = async function(id){
+  if(!isAdmin()){ alert('Solo el administrador puede eliminar comerciales.'); return; }
+  const cm = S.comerciales.find(x=>x.id===id);
+  if(!cm) return;
+  const clientesAsignados = S.clientes.filter(c=>c.comercialId===id);
+  const aviso = `¿Eliminar al comercial "${cm.nombre}"?` +
+    (clientesAsignados.length ? `\n\nTiene ${clientesAsignados.length} cliente(s) asignado(s); se quedarán sin comercial (pasan a ser tuyos).` : '') +
+    `\n\nTambién se eliminará su acceso al CRM (ya no podrá iniciar sesión). Esta acción no se puede deshacer.`;
+  if(!confirm(aviso)) return;
+  for(const c of clientesAsignados){
+    await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), c.id), {comercialId:null});
+  }
+  const snapUsers = await S.fb.getDocs(S.fb.query(col('crm2_users'), S.fb.where('comercialId','==',id)));
+  for(const d of snapUsers.docs){ await S.fb.deleteDoc(S.fb.doc(col('crm2_users'), d.id)); }
+  await S.fb.deleteDoc(S.fb.doc(col('crm2_comerciales'), id));
+  logAction('Comercial eliminado', cm.nombre);
+  render();
+}
 function modalComercialForm(){
   const editing = S.ui.showComercialForm!=='new';
   const cm = editing ? S.comerciales.find(x=>x.id===S.ui.showComercialForm) : {};
@@ -983,6 +1228,7 @@ function modalComercialForm(){
         <div><label>Teléfono</label><input id="cm_telefono" value="${esc(cm.telefono)}"></div>
         <div><label>Fecha de incorporación</label><input id="cm_fecha" type="date" value="${cm.fechaIncorporacion||todayISO()}"></div>
         <div><label>Estado</label><select id="cm_estado"><option value="activo" ${cm.estado==='activo'?'selected':''}>Activo</option><option value="inactivo" ${cm.estado==='inactivo'?'selected':''}>Inactivo</option></select></div>
+        <div><label>% de comisión</label><input id="cm_pct" type="number" step="0.1" min="0" value="${cm.pctComision!=null?cm.pctComision:PCT_COMERCIAL_DEFECTO*100}"></div>
         ${!editing?`<div class="pt-2 border-t" style="border-color:var(--line)"><div class="kicker mb-2">Acceso al CRM</div><label>Contraseña de acceso inicial</label><input id="cm_pass" type="password" placeholder="Si la dejas en blanco, se usa su nombre"><p class="text-xs mt-1" style="color:var(--ink-dim)">El comercial podrá cambiarla desde su cuenta en cualquier momento.</p></div>`:''}
       </div>
       <button class="btn btn-accent w-full mt-5" onclick="saveComercial(${editing?`'${cm.id}'`:'null'})">Guardar</button>
@@ -990,8 +1236,9 @@ function modalComercialForm(){
   </div>`;
 }
 window.saveComercial = async function(id){
+  if(!isAdmin()){ alert('Solo el administrador puede crear o editar comerciales.'); return; }
   const g = k=>document.getElementById('cm_'+k).value;
-  const data = {nombre:g('nombre').trim(), email:g('email').trim().toLowerCase(), telefono:g('telefono').trim(), fechaIncorporacion:g('fecha'), estado:g('estado')};
+  const data = {nombre:g('nombre').trim(), email:g('email').trim().toLowerCase(), telefono:g('telefono').trim(), fechaIncorporacion:g('fecha'), estado:g('estado'), pctComision:parseFloat(g('pct'))||0};
   if(!data.nombre||!data.email){ alert('Nombre y email son obligatorios.'); return; }
   if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), data); logAction('Comercial editado', data.nombre); }
   else{
@@ -1092,6 +1339,8 @@ window.exportCsv = function(){
   if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
   if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
   if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  if(f.investigacion==='hecha') cs = cs.filter(c=>!!c.investigacion);
+  if(f.investigacion==='pendiente') cs = cs.filter(c=>!c.investigacion);
   const data = cs.map(c=>({
     Empresa:c.nombreEmpresa, Contacto:c.personaContacto, Telefono:c.telefono, Email:c.email, Instagram:c.instagram, Ciudad:c.ciudad, Provincia:c.provincia,
     Tipo:c.tipoCliente, Estado:c.estado, Comercial:nombreComercial(c.comercialId),
