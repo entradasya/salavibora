@@ -119,7 +119,17 @@ function col(name){ return S.fb.collection(S.db, name); }
 function startListeners(){
   if(S.listenersOn) return;
   S.listenersOn = true;
-  S.fb.onSnapshot(col('crm2_comerciales'), snap=>{ S.comerciales = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_comerciales'), snap=>{
+    S.comerciales = snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(!isAdmin() && S.session && S.session.comercialId){
+      const propio = S.comerciales.find(cm=>cm.id===S.session.comercialId);
+      if(!propio || propio.estado!=='activo'){
+        alert('Tu acceso ha sido desactivado por el administrador.');
+        doLogout(); return;
+      }
+    }
+    render();
+  });
   S.fb.onSnapshot(col('crm2_clientes'), snap=>{ S.clientes = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
   // (crm2_eventos ya no se usa: los eventos/comisiones reales viven en crm2_comisiones)
   S.fb.onSnapshot(col('crm2_contactos'), snap=>{ S.contactos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
@@ -154,7 +164,8 @@ const ACCIONES_CONTACTO = new Set([
   'Cliente creado','Cliente editado','Cliente eliminado','Eliminación múltiple de clientes','Reasignación de cliente',
   'Ficha importada (actualiza todos los datos del cliente)','Ficha importada (cliente nuevo)',
   'Ficha importada desde la ficha del cliente (datos de contacto + investigación)',
-  'Investigación comercial guardada','Aviso de comercial','Registro de historial eliminado','Registro de venta eliminado'
+  'Investigación comercial guardada','Aviso de comercial','Registro de historial eliminado','Registro de venta eliminado',
+  'Acceso revocado','Acceso reactivado'
 ]);
 
 /* ===================== NOTIFICACIONES (solo admin) ===================== */
@@ -327,6 +338,14 @@ window.doLogin = async function(){
   const snap = await S.fb.getDocs(S.fb.query(col('crm2_users'), S.fb.where('email','==',email)));
   const u = snap.docs.map(d=>({id:d.id,...d.data()})).find(x=>x.pass===pass);
   if(!u){ document.getElementById('lErr').textContent='Email o contraseña incorrectos.'; return; }
+  if(u.role==='comercial' && u.comercialId){
+    const cmSnap = await S.fb.getDoc(S.fb.doc(col('crm2_comerciales'), u.comercialId));
+    const cmData = cmSnap.exists() ? cmSnap.data() : null;
+    if(!cmData || cmData.estado!=='activo'){
+      document.getElementById('lErr').textContent = 'Tu acceso ha sido desactivado por el administrador.';
+      return;
+    }
+  }
   S.session = {userId:u.id, email:u.email, nombre:u.nombre, role:u.role, comercialId:u.comercialId||null};
   localStorage.setItem('ey_session', JSON.stringify(S.session));
   render();
@@ -1182,7 +1201,7 @@ function viewComerciales(){
         <td><span class="badge" style="background:${cm.estado==='activo'?'#26332c':'#332626'};color:${cm.estado==='activo'?'#3ecf8e':'#e0603e'}">${cm.estado}</span></td>
         <td>${pct}%</td>
         <td><span style="cursor:pointer;text-decoration:underline;color:var(--info)" onclick="verClientesDeComercial('${cm.id}')">${n}</span></td>
-        ${isAdmin()?`<td><button class="btn btn-ghost text-xs" onclick="openComercialForm('${cm.id}')">Editar</button> <button class="btn btn-danger text-xs" onclick="deleteComercial('${cm.id}')">Eliminar</button></td>`:''}
+        ${isAdmin()?`<td><button class="btn btn-ghost text-xs" onclick="openComercialForm('${cm.id}')">Editar</button> <button class="btn btn-ghost text-xs" onclick="toggleAccesoComercial('${cm.id}')">${cm.estado==='activo'?'🚫 Revocar acceso':'✅ Reactivar'}</button> <button class="btn btn-danger text-xs" onclick="deleteComercial('${cm.id}')">Eliminar</button></td>`:''}
       </tr>`;
     }).join('') : `<tr><td colspan="8" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}</tbody>
   </table></div></div>`;
@@ -1191,6 +1210,15 @@ window.verClientesDeComercial = function(comercialId){
   S.ui.clienteFiltro = {q:'',comercial:comercialId,estado:'',tipo:'',prioridad:'',investigacion:''};
   S.ui.clientesPage = 0;
   S.ui.view='clientes'; render();
+}
+window.toggleAccesoComercial = async function(id){
+  if(!isAdmin()) return;
+  const cm = S.comerciales.find(x=>x.id===id);
+  const nuevoEstado = cm.estado==='activo' ? 'inactivo' : 'activo';
+  if(!confirm(`¿${nuevoEstado==='activo'?'Reactivar':'Revocar el acceso de'} ${cm.nombre}?`)) return;
+  await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), {estado:nuevoEstado});
+  logAction(nuevoEstado==='activo'?'Acceso reactivado':'Acceso revocado', cm.nombre);
+  render();
 }
 window.openComercialForm = function(id){
   if(!isAdmin()){ alert('Solo el administrador puede crear o editar comerciales.'); return; }
