@@ -1,0 +1,1692 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EntradasYa CRM</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc,
+  onSnapshot, query, where, writeBatch, getDocs, getDoc, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+window.__fb = { initializeApp, getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, writeBatch, getDocs, getDoc, serverTimestamp };
+window.dispatchEvent(new Event("fb-ready"));
+</script>
+<style>
+  :root{
+    --bg:#0f1720; --panel:#16202b; --panel2:#1c2733; --line:#26333f;
+    --ink:#e7edf3; --ink-dim:#8fa1b0; --accent:#3ecf8e; --accent-dim:#255c46;
+    --warn:#e0a53e; --danger:#e0603e; --info:#4d8ff0;
+  }
+  body{background:var(--bg); color:var(--ink); font-family:'Inter',ui-sans-serif,system-ui,sans-serif;}
+  ::-webkit-scrollbar{width:8px;height:8px;} ::-webkit-scrollbar-thumb{background:#2c3a48;border-radius:4px;}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:10px;}
+  .panel2{background:var(--panel2); border:1px solid var(--line); border-radius:8px;}
+  .btn{padding:.55rem 1rem; border-radius:8px; font-weight:600; font-size:.875rem; transition:.15s; cursor:pointer;}
+  .btn-accent{background:var(--accent); color:#08130d;} .btn-accent:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent; border:1px solid var(--line); color:var(--ink);} .btn-ghost:hover{border-color:#3a4a5a;}
+  .btn-danger{background:var(--danger); color:#1a0704;} .btn-danger:hover{filter:brightness(1.1);}
+  input,select,textarea{background:#0f1720; border:1px solid var(--line); color:var(--ink); border-radius:7px; padding:.5rem .65rem; font-size:.875rem; width:100%;}
+  input:focus,select:focus,textarea:focus{outline:none; border-color:var(--accent);}
+  label{font-size:.72rem; color:var(--ink-dim); font-weight:600; letter-spacing:.02em;}
+  .navitem{display:flex; align-items:center; gap:.6rem; padding:.6rem .8rem; border-radius:8px; color:var(--ink-dim); cursor:pointer; font-size:.875rem; font-weight:500;}
+  .navitem:hover{background:var(--panel2); color:var(--ink);}
+  .navitem.active{background:var(--accent-dim); color:var(--accent);}
+  .badge{padding:.15rem .55rem; border-radius:999px; font-size:.7rem; font-weight:700; letter-spacing:.02em; white-space:nowrap;}
+  table{width:100%; border-collapse:collapse; font-size:.83rem;}
+  th{text-align:left; color:var(--ink-dim); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; padding:.5rem .7rem; border-bottom:1px solid var(--line);}
+  td{padding:.55rem .7rem; border-bottom:1px solid var(--line);}
+  tr.row:hover{background:var(--panel2); cursor:pointer;}
+  .modal-bg{position:fixed; inset:0; background:rgba(6,10,14,.7); display:flex; align-items:flex-start; justify-content:center; z-index:50; padding:2rem 1rem; overflow-y:auto;}
+  .tab{padding:.5rem .9rem; border-radius:7px; font-size:.8rem; font-weight:600; color:var(--ink-dim); cursor:pointer;}
+  .tab.active{background:var(--panel2); color:var(--accent);}
+  input[type=checkbox]{width:20px; height:20px; cursor:pointer; accent-color:var(--accent); vertical-align:middle;}
+  th input[type=checkbox], td input[type=checkbox]{width:20px; height:20px;}
+  .stat-num{font-size:1.7rem; font-weight:800; line-height:1;}
+  option{background:#16202b; color:#e7edf3;}
+  .pill-select{appearance:none; -webkit-appearance:none; width:auto; min-width:0; border:1px solid transparent; border-radius:999px; padding:.22rem .8rem; font-size:.7rem; font-weight:700; letter-spacing:.02em; cursor:pointer; text-align:center; transition:.15s;}
+  .pill-select:hover{filter:brightness(1.25); border-color:currentColor;}
+  .ai-chip{display:inline-flex; align-items:center; gap:.3rem; padding:.12rem .55rem; border-radius:999px; font-size:.68rem; font-weight:700; border:1px solid var(--line); background:transparent; color:var(--ink-dim); cursor:pointer; transition:.15s; white-space:nowrap; line-height:1.3;}
+  .ai-chip::before{content:''; width:.45rem; height:.45rem; border-radius:50%; background:currentColor;}
+  .ai-claude{color:#e08a5e;} .ai-claude:hover{background:#e08a5e22; border-color:#e08a5e;}
+  .ai-gpt{color:#4cc9a0;} .ai-gpt:hover{background:#4cc9a022; border-color:#4cc9a0;}
+  .cell-sub{font-size:.72rem; color:var(--ink-dim); margin-top:.15rem;}
+  .ret-num{font-weight:700; color:var(--accent);}
+  .kicker{font-size:.68rem; color:var(--ink-dim); font-weight:600; text-transform:uppercase; letter-spacing:.05em;}
+</style>
+</head>
+<body>
+<div id="app" class="min-h-screen"></div>
+
+<script>
+/* ===================== ESTADO GLOBAL ===================== */
+const S = {
+  fbApp:null, db:null, fb:null,
+  config: JSON.parse(localStorage.getItem('ey_fb_config')||'null') || {"apiKey":"AIzaSyC8tbI3SecAp1KULGXh11WJfJFStRaBqPk","authDomain":"entradasya-87c7c.firebaseapp.com","projectId":"entradasya-87c7c","storageBucket":"entradasya-87c7c.firebasestorage.app","messagingSenderId":"335830211416","appId":"1:335830211416:web:644e29d59b026482f1632d"},
+  session: JSON.parse(localStorage.getItem('ey_session')||'null'),
+  comerciales:[], clientes:[], eventos:[], contactos:[], comisiones:[], logs:[],
+  listenersOn:false,
+  ui:{ view:'dashboard', clienteFiltro:{q:'',comercial:'',estado:'',tipo:'',prioridad:'',investigacion:'',aforo:''}, clienteDetalleId:null, clienteDetalleTab:'investigacion', correoForm:{}, importStep:0, importRows:[], importDupes:[], showPasswordForm:false, clientesPage:0, clientesPageSize:100 }
+};
+const PCT_ADMIN = 0.075; // tu comisión como comercial/administrador, sobre los clientes sin asignar
+const PCT_COMERCIAL_DEFECTO = 0.04; // comisión por defecto de cada comercial, editable por persona
+/* ---- Aforo: se extrae del texto de la investigación y se guarda como número (investigacion.aforo) ---- */
+const AFORO_OPCIONES = [200,300,400,500,600,800,1000];
+const NUM_RE = '(\\d{1,3}(?:[.,]\\d{3})+|\\d+)';
+function numAforo(t){ return parseInt(String(t).replace(/[.,]/g,''),10); }
+// Busca cifras junto a palabras como aforo, capacidad, butacas, personas... y devuelve la mayor (si hay varias salas, la sala más grande). null si no encuentra nada.
+function extraerAforo(...textos){
+  for(const t0 of textos){
+    const t = normBusq(t0);
+    if(!t.trim()) continue;
+    const nums = [];
+    // palabra clave seguida de cifras (en el mismo fragmento)
+    for(const m of t.matchAll(/(?:aforo|capacidad|plazas|butacas|localidades|asientos)([^;|\n]{0,40})/g)){
+      const frag = m[1].split(/\.\s/)[0];
+      for(const n of frag.matchAll(new RegExp(NUM_RE,'g'))) nums.push(numAforo(n[1]));
+    }
+    // cifra seguida de unidad
+    for(const m of t.matchAll(new RegExp(NUM_RE+'\\s*(?:personas|pax|butacas|plazas|asistentes|espectadores|localidades|asientos)','g'))) nums.push(numAforo(m[1]));
+    const validos = nums.filter(n=>n>=10 && n<=200000);
+    if(validos.length) return Math.max(...validos);
+  }
+  return null;
+}
+function textoInvestigacionAforo(inv){ return [inv.tamano, inv.naturaleza, inv.actividad, inv.observaciones]; }
+// Aforo de un cliente: el guardado, o (en fichas antiguas) el que se pueda extraer del texto
+function aforoCliente(c){
+  const inv = c && c.investigacion; if(!inv) return null;
+  const g = Number(inv.aforo);
+  if(g>0) return g;
+  // tamaño que es solo un número ("400", "1.200")
+  const solo = String(inv.tamano||'').trim().match(/^\d{1,3}(?:[.,]\d{3})+$|^\d+$/);
+  if(solo) return numAforo(solo[0]);
+  return extraerAforo(...textoInvestigacionAforo(inv));
+}
+function filtrarPorAforo(cs, v){
+  if(!v) return cs;
+  if(v==='sin') return cs.filter(c=>aforoCliente(c)==null);
+  const min = Number(v);
+  return cs.filter(c=>{ const a = aforoCliente(c); return a!=null && a>=min; });
+}
+
+/* ---- Búsqueda de clientes: campos del contacto + toda la investigación comercial ---- */
+const BUSQ_STOP = new Set(['aforo','capacidad','personas','con','de','del','la','el','los','las','y','e','en','un','una','al','por','para','que','a','o','es','tiene','tienen']);
+function normBusq(t){ return (t==null?'':String(t)).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function textoBusquedaCliente(c){
+  const inv = c.investigacion || {};
+  return normBusq([
+    c.nombreEmpresa,c.personaContacto,c.telefono,c.whatsapp,c.email,c.ciudad,c.provincia,c.tipoCliente,c.web,c.instagram,c.estado,c.prioridad,c.notas,c.observaciones,
+    inv.naturaleza,inv.tamano,inv.actividad,inv.situacion,inv.oportunidad,inv.puntoEntrada,inv.observaciones, aforoCliente(c)!=null ? 'aforo '+aforoCliente(c) : ''
+  ].join(' | '));
+}
+// Todas las palabras relevantes de la búsqueda deben aparecer en algún sitio de la ficha (en cualquier orden, sin tildes, singular o plural)
+function coincideBusqueda(c, q){
+  let nq = normBusq(q);
+  // Umbral de aforo escrito en la búsqueda: "más de 400", "mayor que 400", "400+", "+400", ">400", ">=400"
+  let minAforo = null, estricto = false;
+  const pats = [
+    [new RegExp('mas\\s+de\\s+'+NUM_RE),true],
+    [new RegExp('mayor(?:es)?\\s+(?:de|que)\\s+'+NUM_RE),true],
+    [new RegExp('>\\s*'+NUM_RE),true],
+    [new RegExp('(?:>=|≥)\\s*'+NUM_RE),false],
+    [new RegExp(NUM_RE+'\\s*\\+'),false],
+    [new RegExp('\\+\\s*'+NUM_RE),false]
+  ];
+  for(const [re,est] of pats){
+    const m = nq.match(re);
+    if(m){ minAforo = numAforo(m[1]); estricto = est; nq = nq.replace(m[0],' '); break; }
+  }
+  if(minAforo!=null){
+    const a = aforoCliente(c);
+    if(a==null || (estricto ? a<=minAforo : a<minAforo)) return false;
+  }
+  const palabras = nq.split(/[^a-z0-9@._+-]+/).filter(w=>w && !BUSQ_STOP.has(w));
+  if(!palabras.length) return true;
+  const texto = textoBusquedaCliente(c);
+  return palabras.every(w=>{ const raiz = (w.length>3 && w.endsWith('s')) ? w.slice(0,-1) : w; return texto.includes(raiz); });
+}
+function tasaComision(c){
+  if(!c || !c.comercialId) return PCT_ADMIN;
+  const cm = S.comerciales.find(x=>x.id===c.comercialId);
+  const pct = cm && cm.pctComision!=null ? Number(cm.pctComision) : (PCT_COMERCIAL_DEFECTO*100);
+  return pct/100;
+}
+const money = n => (isFinite(n)?n:0).toLocaleString('es-ES',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const numf = n => (isFinite(n)?n:0).toLocaleString('es-ES');
+const fdate = d => { if(!d) return '-'; const dt = (d instanceof Date)? d : new Date(d); if(isNaN(dt)) return '-'; return dt.toLocaleDateString('es-ES'); };
+const todayISO = () => new Date().toISOString().slice(0,10);
+const uid = () => Math.random().toString(36).slice(2,10);
+
+const ESTADOS = ["Nuevo","1º toma de contacto","Interesado","Seguimiento","Negociación","Primer evento","Cliente activo","Cliente recurrente","Perdido"];
+const TIPOS = ["Sala","Discoteca","Promotor","Productora","Festival","Asociación","Teatro","Palacio de congresos/Auditorios","Artista / manager","Otro"];
+const TIPOS_CONTACTO = ["Llamada","WhatsApp","Email","Instagram","Reunión","Videollamada","Otro"];
+const PRIORIDADES = ["BAJO","MEDIO","ALTO","ESTRATÉGICO"];
+const RESULTADOS = ["No contesta","1º toma de contacto","Interesado","Quiere información","Quiere reunión","Quiere probar EntradasYa.es","Negociación","Cliente conseguido","No interesado","No encaja"];
+
+// Calcula ventas y retorno REALES a partir de los eventos/comisiones que se han
+// introducido para ese cliente (ya no es una estimación, son datos reales una vez registrados).
+function calcPotencial(c){
+  const ks = S.comisiones.filter(k=>k.clienteId===c.id);
+  const entradasAnuales = ks.reduce((a,k)=>a+(Number(k.entradas)||0),0);
+  const ventasAnuales = ks.reduce((a,k)=>a+(Number(k.valorTotal)||0),0);
+  const retornoAnual = ventasAnuales*tasaComision(c);
+  const retornoMensual = retornoAnual/12;
+  return {entradasAnuales, ventasAnuales, retornoAnual, retornoMensual};
+}
+function prioridadDe(retornoAnual){
+  if(retornoAnual>10000) return 'ESTRATÉGICO';
+  if(retornoAnual>=5000) return 'ALTO';
+  if(retornoAnual>=2000) return 'MEDIO';
+  return 'BAJO';
+}
+function prioridadColor(p){
+  return {BAJO:'background:#2a2f22;color:#a9c15a', MEDIO:'background:#2a2c1e;color:#e0c23e', ALTO:'background:#2c2418;color:#e0a53e', 'ESTRATÉGICO':'background:#26332c;color:#3ecf8e'}[p]||'';
+}
+function estadoColor(e){
+  const map = {Nuevo:'#4d8ff0', '1º toma de contacto':'#4d8ff0', Interesado:'#e0c23e', Seguimiento:'#e0a53e', Negociación:'#e0a53e', 'Primer evento':'#3ecf8e', 'Cliente activo':'#3ecf8e', 'Cliente recurrente':'#3ecf8e', Perdido:'#e0603e'};
+  return map[e]||'#8fa1b0';
+}
+
+/* ===================== FIREBASE ===================== */
+function connectFirebase(cfg){
+  S.fb = window.__fb;
+  S.fbApp = S.fb.initializeApp(cfg);
+  S.db = S.fb.getFirestore(S.fbApp);
+  S.config = cfg;
+  localStorage.setItem('ey_fb_config', JSON.stringify(cfg));
+}
+function col(name){ return S.fb.collection(S.db, name); }
+
+function startListeners(){
+  if(S.listenersOn) return;
+  S.listenersOn = true;
+  S.fb.onSnapshot(col('crm2_comerciales'), snap=>{
+    S.comerciales = snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(!isAdmin() && S.session && S.session.comercialId){
+      const propio = S.comerciales.find(cm=>cm.id===S.session.comercialId);
+      if(!propio || propio.estado!=='activo'){
+        alert('Tu acceso ha sido desactivado por el administrador.');
+        doLogout(); return;
+      }
+    }
+    render();
+  });
+  S.fb.onSnapshot(col('crm2_clientes'), snap=>{ S.clientes = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  // (crm2_eventos ya no se usa: los eventos/comisiones reales viven en crm2_comisiones)
+  S.fb.onSnapshot(col('crm2_contactos'), snap=>{ S.contactos = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_comisiones'), snap=>{ S.comisiones = snap.docs.map(d=>({id:d.id,...d.data()})); render(); });
+  S.fb.onSnapshot(col('crm2_log'), snap=>{
+    S.logs = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.fechaHora||'').localeCompare(a.fechaHora||''));
+    if(isOwner() && S._logsCargados){
+      snap.docChanges().forEach(ch=>{
+        if(ch.type==='added'){
+          const l = ch.doc.data();
+          if(ACCIONES_CONTACTO.has(l.accion) && l.email!==S.session.email){
+            notificarEscritorio(l.accion, `${l.usuario}: ${l.detalle||''}`);
+          }
+        }
+      });
+    }
+    S._logsCargados = true;
+    render();
+  });
+  if(isOwner() && typeof Notification!=='undefined' && Notification.permission==='default'){
+    Notification.requestPermission();
+  }
+}
+function notificarEscritorio(titulo, cuerpo){
+  try{
+    if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+      new Notification('CRM EntradasYa — '+titulo, {body:cuerpo});
+    }
+  }catch(e){}
+}
+const ACCIONES_CONTACTO = new Set([
+  'Cliente creado','Cliente editado','Cambio de estado comercial','Cambio de prioridad','Investigación con Claude abierta','Investigación con ChatGPT abierta','Cliente eliminado','Eliminación múltiple de clientes','Reasignación de cliente',
+  'Ficha importada (actualiza todos los datos del cliente)','Ficha importada (cliente nuevo)',
+  'Ficha importada desde la ficha del cliente (datos de contacto + investigación)',
+  'Investigación comercial guardada','Aviso de comercial','Registro de historial eliminado','Registro de venta eliminado',
+  'Acceso revocado','Acceso reactivado'
+]);
+
+/* ===================== NOTIFICACIONES (solo admin) ===================== */
+function clientesSinEventos(){
+  const estadosVigilar = ['Cliente activo','Cliente recurrente','Primer evento'];
+  const hoy = new Date();
+  return S.clientes.filter(c=>estadosVigilar.includes(c.estado)).map(c=>{
+    const ventas = S.comisiones.filter(k=>k.clienteId===c.id).sort((a,b)=>(b.fechaEvento||b.fecha||'').localeCompare(a.fechaEvento||a.fecha||''));
+    const ref = (ventas[0]?.fechaEvento || ventas[0]?.fecha) || c.fechaAlta;
+    if(!ref) return null;
+    const dias = Math.floor((hoy - new Date(ref)) / 86400000);
+    return dias>60 ? {c, dias, ref} : null;
+  }).filter(Boolean).sort((a,b)=>b.dias-a.dias);
+}
+function comercialesInactivos(){
+  const hoy = new Date();
+  return S.comerciales.map(cm=>{
+    const suyos = S.logs.filter(l=>l.email===cm.email);
+    const ultimo = suyos[0]; // S.logs ya viene ordenado desc por fecha
+    const dias = ultimo ? Math.floor((hoy - new Date(ultimo.fechaHora)) / 86400000) : null;
+    return (dias===null || dias>7) ? {cm, dias} : null;
+  }).filter(Boolean).sort((a,b)=>(b.dias??9999)-(a.dias??9999));
+}
+function contarNotificaciones(){
+  return clientesSinEventos().length + comercialesInactivos().length;
+}
+function viewNotificaciones(){
+  const sinEventos = clientesSinEventos();
+  const inactivos = comercialesInactivos();
+  return `
+  <h2 class="text-xl font-bold mb-1">🔔 Notificaciones</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Avisos automáticos calculados en vivo con los datos actuales.</p>
+
+  <div class="panel p-4 mb-5">
+    <div class="font-bold mb-3">⏰ Clientes activos sin eventos hace más de 2 meses (${sinEventos.length})</div>
+    ${sinEventos.length? `<div class="overflow-x-auto"><table>
+      <thead><tr><th>Cliente</th><th>Estado</th><th>Comercial</th><th>Última referencia</th><th>Días sin evento</th></tr></thead>
+      <tbody>${sinEventos.map(x=>`<tr class="row" onclick="openCliente('${x.c.id}')">
+        <td class="font-semibold">${esc(x.c.nombreEmpresa)}</td>
+        <td>${esc(x.c.estado)}</td>
+        <td style="color:var(--ink-dim)">${esc(nombreComercial(x.c.comercialId))}</td>
+        <td>${fdate(x.ref)}</td>
+        <td style="color:var(--danger);font-weight:700">${x.dias} días</td>
+      </tr>`).join('')}</tbody>
+    </table></div>` : `<p class="text-sm" style="color:var(--ink-dim)">Ninguno, todo al día.</p>`}
+  </div>
+
+  <div class="panel p-4">
+    <div class="font-bold mb-3">👤 Comerciales sin actividad hace más de 1 semana (${inactivos.length})</div>
+    ${inactivos.length? `<div class="overflow-x-auto"><table>
+      <thead><tr><th>Comercial</th><th>Email</th><th>Última actividad</th></tr></thead>
+      <tbody>${inactivos.map(x=>`<tr>
+        <td class="font-semibold">${esc(x.cm.nombre)}</td>
+        <td style="color:var(--ink-dim)">${esc(x.cm.email)}</td>
+        <td style="color:var(--danger);font-weight:700">${x.dias==null?'Nunca ha tenido actividad':x.dias+' días'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>` : `<p class="text-sm" style="color:var(--ink-dim)">Todos activos esta semana.</p>`}
+  </div>`;
+}
+
+/* ===================== LOG DE ACTIVIDAD ===================== */
+async function logAction(accion, detalle){
+  try{
+    await S.fb.addDoc(col('crm2_log'), {
+      accion, detalle: detalle||'',
+      usuario: (S.session&&(S.session.nombre||S.session.email))||'desconocido',
+      email: (S.session&&S.session.email)||'',
+      role: (S.session&&S.session.role)||'',
+      fechaHora: new Date().toISOString()
+    });
+  }catch(e){ /* si falla el log, no bloqueamos la acción principal */ }
+}
+
+async function ensureAdminBootstrap(){
+  const snap = await S.fb.getDocs(col('crm2_users'));
+  return snap.size===0;
+}
+
+/* ===================== RENDER RAÍZ ===================== */
+function render(){
+  const root = document.getElementById('app');
+  if(!S.config){ root.innerHTML = viewSetup(); return; }
+  if(!S.db){ connectFirebase(S.config); }
+  if(!S.session){ root.innerHTML = viewCheckingOrLogin(); if(!S._checked){ checkBootstrap(); } return; }
+  startListeners();
+  // Conserva el foco y la posición del cursor del campo que se está escribiendo (p. ej. la búsqueda),
+  // porque render() reconstruye toda la pantalla y si no se pierde el foco tras cada carácter.
+  const ae = document.activeElement;
+  const keepId = (ae && ae.id && root.contains(ae) && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA')) ? ae.id : null;
+  let ss = null, se = null;
+  if(keepId){ try{ ss = ae.selectionStart; se = ae.selectionEnd; }catch(e){} }
+  root.innerHTML = viewApp();
+  if(keepId){
+    const n = document.getElementById(keepId);
+    if(n){ n.focus(); try{ if(ss!=null) n.setSelectionRange(ss,se); }catch(e){} }
+  }
+}
+let bootstrapNeeded = null;
+async function checkBootstrap(){
+  S._checked = true;
+  bootstrapNeeded = await ensureAdminBootstrap();
+  render2();
+}
+function render2(){ document.getElementById('app').innerHTML = viewCheckingOrLogin(); }
+
+/* ===================== VISTA: SETUP FIREBASE ===================== */
+function viewSetup(){
+  return `
+  <div class="min-h-screen flex items-center justify-center p-6">
+    <div class="panel p-8 w-full max-w-lg">
+      <h1 class="text-xl font-bold mb-1">EntradasYa CRM</h1>
+      <p class="text-sm mb-5" style="color:var(--ink-dim)">Conecta tu base de datos gratuita (Firebase Firestore). Crea un proyecto gratis en console.firebase.google.com, activa Firestore, copia el objeto de configuración web y pégalo aquí.</p>
+      <label>Configuración Firebase (objeto JSON)</label>
+      <textarea id="cfgInput" rows="8" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'></textarea>
+      <div id="cfgErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-4" onclick="submitConfig()">Guardar y conectar</button>
+    </div>
+  </div>`;
+}
+window.submitConfig = function(){
+  const txt = document.getElementById('cfgInput').value.trim();
+  try{
+    const cfg = JSON.parse(txt);
+    if(!cfg.projectId || !cfg.apiKey) throw new Error('faltan campos');
+    connectFirebase(cfg);
+    render();
+  }catch(e){ document.getElementById('cfgErr').textContent = 'JSON no válido. Revisa que hayas copiado el objeto completo.'; }
+}
+
+/* ===================== VISTA: LOGIN / BOOTSTRAP ===================== */
+function viewCheckingOrLogin(){
+  if(bootstrapNeeded===null){
+    return `<div class="min-h-screen flex items-center justify-center"><p style="color:var(--ink-dim)">Conectando...</p></div>`;
+  }
+  if(bootstrapNeeded){
+    return `
+    <div class="min-h-screen flex items-center justify-center p-6">
+      <div class="panel p-8 w-full max-w-md">
+        <h1 class="text-xl font-bold mb-1">Crear administrador</h1>
+        <p class="text-sm mb-5" style="color:var(--ink-dim)">No hay usuarios todavía. Crea la cuenta de administrador principal.</p>
+        <div class="space-y-3">
+          <div><label>Nombre</label><input id="bNombre"></div>
+          <div><label>Email</label><input id="bEmail" type="email"></div>
+          <div><label>Contraseña</label><input id="bPass" type="password"></div>
+        </div>
+        <div id="bErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+        <button class="btn btn-accent w-full mt-4" onclick="createAdmin()">Crear administrador</button>
+      </div>
+    </div>`;
+  }
+  return `
+  <div class="min-h-screen flex items-center justify-center p-6">
+    <div class="panel p-8 w-full max-w-md">
+      <h1 class="text-xl font-bold mb-1">EntradasYa CRM</h1>
+      <p class="text-sm mb-5" style="color:var(--ink-dim)">Inicia sesión para continuar.</p>
+      <div class="space-y-3">
+        <div><label>Email</label><input id="lEmail" type="email"></div>
+        <div><label>Contraseña</label><input id="lPass" type="password"></div>
+      </div>
+      <div id="lErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-4" onclick="doLogin()">Entrar</button>
+    </div>
+  </div>`;
+}
+window.createAdmin = async function(){
+  const nombre = document.getElementById('bNombre').value.trim();
+  const email = document.getElementById('bEmail').value.trim().toLowerCase();
+  const pass = document.getElementById('bPass').value;
+  if(!nombre||!email||!pass){ document.getElementById('bErr').textContent='Rellena todos los campos.'; return; }
+  const newId = uid();
+  await S.fb.setDoc(S.fb.doc(col('crm2_users'), newId), {nombre, email, pass, role:'admin', comercialId:null, creado:todayISO()});
+  bootstrapNeeded = false;
+  S.session = {userId:newId, email, nombre, role:'admin', comercialId:null};
+  localStorage.setItem('ey_session', JSON.stringify(S.session));
+  render();
+}
+window.doLogin = async function(){
+  const email = document.getElementById('lEmail').value.trim().toLowerCase();
+  const pass = document.getElementById('lPass').value;
+  const snap = await S.fb.getDocs(S.fb.query(col('crm2_users'), S.fb.where('email','==',email)));
+  const u = snap.docs.map(d=>({id:d.id,...d.data()})).find(x=>x.pass===pass);
+  if(!u){ document.getElementById('lErr').textContent='Email o contraseña incorrectos.'; return; }
+  if(u.role==='comercial' && u.comercialId){
+    const cmSnap = await S.fb.getDoc(S.fb.doc(col('crm2_comerciales'), u.comercialId));
+    const cmData = cmSnap.exists() ? cmSnap.data() : null;
+    if(!cmData || cmData.estado!=='activo'){
+      document.getElementById('lErr').textContent = 'Tu acceso ha sido desactivado por el administrador.';
+      return;
+    }
+  }
+  S.session = {userId:u.id, email:u.email, nombre:u.nombre, role:u.role, comercialId:u.comercialId||null};
+  localStorage.setItem('ey_session', JSON.stringify(S.session));
+  render();
+  logAction('Inicio de sesión','');
+}
+window.doLogout = function(){ S.session=null; localStorage.removeItem('ey_session'); render(); }
+
+/* ===================== SHELL APP ===================== */
+function isAdmin(){ return S.session && S.session.role==='admin'; }
+const OWNER_EMAIL = 'danielgomezgarcia1980@gmail.com';
+function isOwner(){ return S.session && S.session.email===OWNER_EMAIL; }
+function misClientes(){
+  if(isAdmin()) return S.clientes;
+  // Solo los clientes que tiene asignados el admin + los que él mismo ha creado (vía ficha).
+  // Ya NO incluye el "pool" de sin asignar: eso ahora es solo del administrador.
+  return S.clientes.filter(c=>c.comercialId===S.session.comercialId || c.creadoPor===S.session.userId);
+}
+function puedeAbrir(c){
+  if(!c) return false;
+  if(isAdmin()) return true;
+  return c.comercialId===S.session.comercialId || c.creadoPor===S.session.userId;
+}
+function puedeEditar(c){
+  // Editar la FICHA del contacto (nombre/teléfono/email/...) es SOLO del administrador.
+  // Los comerciales solo pueden crear/actualizar contactos subiendo una ficha comercial (.txt).
+  return isAdmin();
+}
+function viewApp(){
+  const nav = [
+    ['dashboard','Panel'],['clientes','Clientes'],['seguimientos','Seguimientos'],
+    ...(isAdmin()?[['comisiones','Comisiones']]:[]),
+    ['comerciales','Comerciales'],
+    ...(isAdmin()?[['importar','Importar / Exportar']]:[]),
+    ...(isOwner()?[['notificaciones','🔔 Notificaciones'],['actividad','Actividad']]:[])
+  ];
+  return `
+  <div class="flex min-h-screen">
+    <aside class="w-56 shrink-0 border-r p-4 flex flex-col" style="border-color:var(--line)">
+      <div class="mb-6">
+        <div class="font-extrabold text-lg">EntradasYa</div>
+        <div class="kicker">CRM comercial</div>
+      </div>
+      <nav class="space-y-1 flex-1">
+        ${nav.map(([k,l])=>`<div class="navitem ${S.ui.view===k?'active':''}" onclick="setView('${k}')">${l}${k==='notificaciones'&&contarNotificaciones()>0?` <span class="badge" style="background:var(--danger);color:#fff">${contarNotificaciones()}</span>`:''}</div>`).join('')}
+      </nav>
+      <div class="pt-4 border-t" style="border-color:var(--line)">
+        <div class="text-sm font-semibold">${S.session.nombre||S.session.email}</div>
+        <div class="text-xs mb-3" style="color:var(--ink-dim)">${isAdmin()?'Administrador':'Comercial'}</div>
+        <button class="btn btn-ghost w-full text-xs mb-2" onclick="openPasswordForm()">Cambiar contraseña</button>
+        <button class="btn btn-ghost w-full text-xs" onclick="doLogout()">Cerrar sesión</button>
+      </div>
+    </aside>
+    <main class="flex-1 p-6 overflow-x-hidden">
+      ${ S.ui.view==='dashboard' ? viewDashboard() :
+         S.ui.view==='clientes' ? viewClientes() :
+         S.ui.view==='seguimientos' ? viewSeguimientos() :
+         S.ui.view==='comisiones' ? (isAdmin()?viewComisiones():'') :
+         S.ui.view==='comerciales' ? viewComerciales() :
+         S.ui.view==='importar' ? (isAdmin()?viewImportar():'') :
+         S.ui.view==='notificaciones' ? (isOwner()?viewNotificaciones():'') :
+         S.ui.view==='actividad' ? viewActividad() : '' }
+    </main>
+  </div>
+  ${S.ui.clienteDetalleId ? modalClienteDetalle() : ''}
+  ${S.ui.showComercialForm ? modalComercialForm() : ''}
+  ${S.ui.showClienteForm ? modalClienteForm() : ''}
+  ${S.ui.showPasswordForm ? modalPasswordForm() : ''}
+  `;
+}
+
+/* ===================== CAMBIAR CONTRASEÑA (propia) ===================== */
+window.openPasswordForm = function(){ S.ui.showPasswordForm = true; render(); }
+window.closePasswordForm = function(){ S.ui.showPasswordForm = false; render(); }
+function modalPasswordForm(){
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closePasswordForm()">
+    <div class="panel p-6 w-full max-w-md mt-4">
+      <div class="flex justify-between items-center mb-4"><div class="font-bold text-lg">Cambiar contraseña</div><button class="btn btn-ghost text-xs" onclick="closePasswordForm()">Cerrar</button></div>
+      <div class="space-y-3">
+        <div><label>Contraseña actual</label><input id="pf_actual" type="password"></div>
+        <div><label>Nueva contraseña</label><input id="pf_nueva" type="password"></div>
+        <div><label>Repetir nueva contraseña</label><input id="pf_repetir" type="password"></div>
+      </div>
+      <div id="pfErr" class="text-sm mt-2" style="color:var(--danger)"></div>
+      <button class="btn btn-accent w-full mt-5" onclick="savePassword()">Guardar contraseña</button>
+    </div>
+  </div>`;
+}
+window.savePassword = async function(){
+  const actual = document.getElementById('pf_actual').value;
+  const nueva = document.getElementById('pf_nueva').value;
+  const repetir = document.getElementById('pf_repetir').value;
+  const err = document.getElementById('pfErr');
+  if(!actual||!nueva||!repetir){ err.textContent='Rellena todos los campos.'; return; }
+  if(nueva!==repetir){ err.textContent='Las contraseñas nuevas no coinciden.'; return; }
+  if(nueva.length<4){ err.textContent='La nueva contraseña es demasiado corta.'; return; }
+  const ref = S.fb.doc(col('crm2_users'), S.session.userId);
+  const snap = await S.fb.getDoc(ref);
+  if(!snap.exists() || snap.data().pass!==actual){ err.textContent='La contraseña actual no es correcta.'; return; }
+  await S.fb.updateDoc(ref, {pass:nueva});
+  logAction('Cambio de contraseña','');
+  S.ui.showPasswordForm=false; render();
+  alert('Contraseña actualizada correctamente.');
+}
+window.setView = function(v){ S.ui.view=v; render(); }
+
+/* ===================== DASHBOARD ===================== */
+function viewDashboard(){
+  const cs = misClientes();
+  const total = cs.length;
+  const porEstado = e => cs.filter(c=>c.estado===e).length;
+  const nuevos = porEstado('Nuevo');
+  const contactados = cs.filter(c=>['1º toma de contacto','Interesado','Seguimiento','Negociación'].includes(c.estado)).length;
+  const interesados = porEstado('Interesado');
+  const negociacion = porEstado('Negociación');
+  const activos = cs.filter(c=>['Cliente activo','Cliente recurrente','Primer evento'].includes(c.estado)).length;
+  const perdidos = porEstado('Perdido');
+  const hoy = todayISO();
+  const proximos = cs.filter(c=>c.proximoSeguimiento && c.proximoSeguimiento>=hoy).length;
+  let ventasPotTotal=0, retornoPotTotal=0;
+  cs.forEach(c=>{ const p=calcPotencial(c); ventasPotTotal+=p.ventasAnuales; retornoPotTotal+=p.retornoAnual; });
+  const ranking = [...cs].map(c=>({...c,...calcPotencial(c)})).sort((a,b)=>b.retornoAnual-a.retornoAnual).slice(0,10);
+
+  const stat = (label,val,color)=>`
+    <div class="panel p-4">
+      <div class="kicker">${label}</div>
+      <div class="stat-num" style="${color?`color:${color}`:''}">${val}</div>
+    </div>`;
+
+  return `
+  <div class="mb-5">
+    <h2 class="text-xl font-bold">Panel principal</h2>
+    <p class="text-sm" style="color:var(--ink-dim)">Resumen ${isAdmin()?'global':'de tu cartera'}, actualizado en tiempo real.</p>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    ${stat('Total clientes', numf(total))}
+    ${stat('Nuevos', numf(nuevos), '#4d8ff0')}
+    ${stat('Contactados', numf(contactados))}
+    ${stat('Interesados', numf(interesados),'#e0c23e')}
+    ${stat('En negociación', numf(negociacion),'#e0a53e')}
+    ${stat('Clientes activos', numf(activos),'#3ecf8e')}
+    ${stat('Perdidos', numf(perdidos),'#e0603e')}
+    ${stat('Seguimientos pendientes', numf(proximos))}
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+    ${stat('Ventas potenciales / año', money(ventasPotTotal))}
+    ${stat('Retorno potencial / año', money(retornoPotTotal),'#3ecf8e')}
+    ${stat('Retorno potencial / mes', money(retornoPotTotal/12))}
+  </div>
+  <div class="panel p-4">
+    <div class="font-bold mb-3">Ranking de clientes por potencial económico</div>
+    <div class="overflow-x-auto">
+    <table>
+      <thead><tr><th>Cliente</th><th>Tipo</th><th>Ventas/año</th><th>Retorno/año</th><th>Prioridad</th></tr></thead>
+      <tbody>
+        ${ranking.length? ranking.map(c=>`
+          <tr class="row" onclick="openCliente('${c.id}')">
+            <td class="font-semibold">${esc(c.nombreEmpresa)}</td>
+            <td style="color:var(--ink-dim)">${esc(c.tipoCliente||'-')}</td>
+            <td>${money(c.ventasAnuales)}</td>
+            <td>${money(c.retornoAnual)}</td>
+            <td><span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad}</span></td>
+          </tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Todavía no hay clientes con potencial calculado.</td></tr>`}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  ${viewRendimientoComerciales()}
+  `;
+}
+function viewRendimientoComerciales(){
+  const ESTADOS_RANKING = ['1º toma de contacto','Interesado','Negociación','Primer evento','Cliente activo','Cliente recurrente'];
+  const rows = S.comerciales.map(cm=>{
+    const propios = S.clientes.filter(c=>c.comercialId===cm.id);
+    const conseguidos = propios.filter(c=>['Cliente activo','Cliente recurrente','Primer evento'].includes(c.estado)).length;
+    const ventasComisiones = S.comisiones.filter(k=>propios.some(p=>p.id===k.clienteId));
+    const ventas = ventasComisiones.reduce((a,k)=>a+Number(k.valorTotal||0),0);
+    const nEventos = ventasComisiones.length;
+    const pct = cm.pctComision!=null ? Number(cm.pctComision) : PCT_COMERCIAL_DEFECTO*100;
+    const comision = ventas*(pct/100);
+    const porEstado = {};
+    ESTADOS_RANKING.forEach(e=> porEstado[e] = propios.filter(c=>c.estado===e).length);
+    return {cm, propios:propios.length, conseguidos, ventas, comision, pct, nEventos, porEstado};
+  });
+  const ranking = [...rows].sort((a,b)=>b.ventas-a.ventas);
+
+  return `
+  <div class="panel p-4 mt-4">
+    <div class="font-bold mb-3">Ranking de comerciales</div>
+    <div class="overflow-x-auto">
+    <table>
+      <thead><tr><th>#</th><th>Comercial</th>${ESTADOS_RANKING.map(e=>`<th>${e}</th>`).join('')}<th>Clientes conseguidos</th><th>Eventos con ventas</th><th>Ventas generadas</th><th>Comisión</th></tr></thead>
+      <tbody>
+      ${ranking.length? ranking.map((r,i)=>`<tr${i===0?' style="background:var(--panel-2,rgba(62,207,142,.08))"':''}>
+          <td class="font-bold">${i+1}º</td>
+          <td class="font-semibold">${esc(r.cm.nombre)}</td>
+          ${ESTADOS_RANKING.map(e=>`<td style="text-align:center">${r.porEstado[e]}</td>`).join('')}
+          <td>${r.conseguidos}</td>
+          <td style="text-align:center">${r.nEventos}</td>
+          <td class="font-semibold">${money(r.ventas)}</td>
+          <td>${money(r.comision)} <span class="text-xs" style="color:var(--ink-dim)">(${r.pct}%)</span></td>
+        </tr>`).join('') : `<tr><td colspan="${5+ESTADOS_RANKING.length}" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+}
+
+/* ===================== CLIENTES ===================== */
+function viewClientes(){
+  const f = S.ui.clienteFiltro;
+  let cs = S.clientes.map(c=>({...c,...calcPotencial(c)}));
+  if(f.q) cs = cs.filter(c=> coincideBusqueda(c, f.q));
+  if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
+  if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
+  if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
+  if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  if(f.investigacion==='hecha') cs = cs.filter(c=>!!c.investigacion);
+  if(f.investigacion==='pendiente') cs = cs.filter(c=>!c.investigacion);
+  cs = filtrarPorAforo(cs, f.aforo);
+  cs.sort((a,b)=>b.retornoAnual-a.retornoAnual);
+
+  const comercialOpt = cm => `<option value="${cm.id}" ${f.comercial===cm.id?'selected':''}>${esc(cm.nombre)}</option>`;
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+
+  const pageSize = S.ui.clientesPageSize || 100;
+  const totalPaginas = Math.max(1, Math.ceil(cs.length/pageSize));
+  if(S.ui.clientesPage==null) S.ui.clientesPage = 0;
+  if(S.ui.clientesPage >= totalPaginas) S.ui.clientesPage = totalPaginas-1;
+  const pagina = cs.slice(S.ui.clientesPage*pageSize, (S.ui.clientesPage+1)*pageSize);
+  const visibleIds = pagina.map(c=>c.id);
+  const allSelected = visibleIds.length>0 && visibleIds.every(id=>sel.has(id));
+
+  return `
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h2 class="text-xl font-bold">Clientes</h2>
+      <p class="text-sm" style="color:var(--ink-dim)">${cs.length} resultado(s)${sel.size?` · ${sel.size} seleccionado(s)`:''}${!isAdmin()?' · solo puedes abrir los tuyos (asignados o creados por ti)':''}</p>
+    </div>
+    <div class="flex gap-2">
+      ${isAdmin() && sel.size ? `<button class="btn btn-danger" onclick="deleteSelectedClientes()">Eliminar seleccionados (${sel.size})</button>` : ''}
+      <label class="btn btn-ghost" style="cursor:pointer">📤 Subir ficha comercial (.txt)<input type="file" accept=".txt" style="display:none" onchange="importarFichaGlobal(event)"></label>
+      ${isAdmin()?`<button class="btn btn-accent" onclick="openClienteForm()">+ Nuevo cliente</button>`:''}
+    </div>
+  </div>
+  <div class="panel p-3 mb-4 grid grid-cols-2 md:grid-cols-8 gap-2">
+    <input id="filtroClientesQ" class="md:col-span-2" placeholder="Buscar en datos e investigación: ej. teatro Madrid más de 400" value="${esc(f.q)}" oninput="setFiltro('q',this.value)">
+    ${isAdmin()?`<select onchange="setFiltro('comercial',this.value)"><option value="">Comercial: todos</option>${S.comerciales.map(comercialOpt).join('')}</select>`:''}
+    <select onchange="setFiltro('estado',this.value)"><option value="">Estado: todos</option>${ESTADOS.map(e=>`<option ${f.estado===e?'selected':''}>${e}</option>`).join('')}</select>
+    <select onchange="setFiltro('tipo',this.value)"><option value="">Tipo: todos</option>${TIPOS.map(t=>`<option ${f.tipo===t?'selected':''}>${t}</option>`).join('')}</select>
+    <select onchange="setFiltro('prioridad',this.value)"><option value="">Prioridad: todas</option>${PRIORIDADES.map(p=>`<option ${f.prioridad===p?'selected':''}>${p}</option>`).join('')}</select>
+    <select onchange="setFiltro('investigacion',this.value)">
+      <option value="">Investigación: todas</option>
+      <option value="hecha" ${f.investigacion==='hecha'?'selected':''}>🔎 Hecha</option>
+      <option value="pendiente" ${f.investigacion==='pendiente'?'selected':''}>Pendiente</option>
+    </select>
+    <select onchange="setFiltro('aforo',this.value)">
+      <option value="">Aforo: todos</option>
+      ${AFORO_OPCIONES.map(n=>`<option value="${n}" ${String(f.aforo)===String(n)?'selected':''}>Aforo ${n.toLocaleString('es-ES')} o más</option>`).join('')}
+      <option value="sin" ${f.aforo==='sin'?'selected':''}>Sin aforo registrado</option>
+    </select>
+  </div>
+  <div class="panel p-4">
+    <div class="overflow-x-auto">
+    <table>
+      <thead><tr>${isAdmin()?`<th style="width:40px;padding:.5rem"><input type="checkbox" onclick="event.stopPropagation();toggleSelectAllClientes(this.checked)" ${allSelected?'checked':''}></th>`:''}<th>Empresa</th><th>Contacto</th><th>Población</th><th>Tipo</th><th>Estado</th>${isAdmin()?'<th>Comercial</th>':''}<th>Retorno</th><th>Prioridad</th><th>Próx. seguim.</th></tr></thead>
+      <tbody>
+      ${pagina.length? pagina.map(c=>{
+        const abrible = puedeAbrir(c);
+        return `
+        <tr class="${abrible?'row':''}" ${abrible?`onclick="openCliente('${c.id}')"`:''} style="${abrible?'':'opacity:.45;cursor:not-allowed'}" ${abrible?'':'title="No asignado a ti"'}>
+          ${isAdmin()?`<td onclick="event.stopPropagation()" style="padding:.5rem;text-align:center"><input type="checkbox" onclick="toggleSelectCliente('${c.id}',this.checked)" ${sel.has(c.id)?'checked':''}></td>`:''}
+          <td class="font-semibold">${abrible?'':'🔒 '}${esc(c.nombreEmpresa)} ${c.investigacion?'<span title="Investigación comercial registrada" style="color:var(--info)">🔎</span>':''}</td>
+          <td>
+            <div>${esc(c.personaContacto||'-')}</div>
+            ${abrible?`<div class="cell-sub" style="display:flex;gap:.35rem;align-items:center"><span>Investigar:</span><button class="ai-chip ai-claude" title="Investigación comercial con Claude" onclick="event.stopPropagation();investigarConClaude('${c.id}')">Claude</button><button class="ai-chip ai-gpt" title="Investigación comercial con ChatGPT" onclick="event.stopPropagation();investigarConChatGPT('${c.id}')">ChatGPT</button></div>`:''}
+          </td>
+          <td style="color:var(--ink-dim)">${esc(c.ciudad||'-')}</td>
+          <td>${esc(c.tipoCliente||'-')}</td>
+          <td ${abrible?`onclick="event.stopPropagation()"`:''}>${abrible
+            ? `<select class="pill-select" onchange="cambiarCampoCliente('${c.id}','estado',this.value)" style="background:${estadoColor(c.estado)}22;color:${estadoColor(c.estado)}">${ESTADOS.map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}</select>`
+            : `<span class="badge" style="background:${estadoColor(c.estado)}22;color:${estadoColor(c.estado)}">${esc(c.estado||'-')}</span>`}</td>
+          ${isAdmin()?`<td onclick="event.stopPropagation()"><select onchange="asignarComercialRapido('${c.id}',this.value)"><option value="">Sin asignar</option>${S.comerciales.map(cm=>`<option value="${cm.id}" ${c.comercialId===cm.id?'selected':''}>${esc(cm.nombre)}</option>`).join('')}</select></td>`:''}
+          <td class="ret-num">${money(c.retornoAnual)}</td>
+          <td ${abrible?`onclick="event.stopPropagation()"`:''}>${abrible
+            ? `<select class="pill-select" onchange="cambiarCampoCliente('${c.id}','prioridad',this.value)" style="${prioridadColor(c.prioridad)}">${PRIORIDADES.map(p=>`<option ${c.prioridad===p?'selected':''}>${p}</option>`).join('')}</select>`
+            : `<span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad||'-'}</span>`}</td>
+          <td style="color:var(--ink-dim)">${fdate(c.proximoSeguimiento)}</td>
+        </tr>`;
+      }).join('') : `<tr><td colspan="10" style="color:var(--ink-dim)">Sin resultados. Ajusta los filtros o crea un cliente.</td></tr>`}
+      </tbody>
+    </table>
+    </div>
+    <div class="flex items-center justify-between mt-4 pt-3 border-t" style="border-color:var(--line)">
+      <div class="text-xs" style="color:var(--ink-dim)">Página ${S.ui.clientesPage+1} de ${totalPaginas} · mostrando ${pagina.length} de ${cs.length}</div>
+      <div class="flex gap-2 items-center">
+        <select onchange="S.ui.clientesPageSize=parseInt(this.value); S.ui.clientesPage=0; render();" style="width:auto">
+          <option value="50" ${pageSize===50?'selected':''}>50 por página</option>
+          <option value="100" ${pageSize===100?'selected':''}>100 por página</option>
+          <option value="250" ${pageSize===250?'selected':''}>250 por página</option>
+        </select>
+        <button class="btn btn-ghost text-xs" ${S.ui.clientesPage===0?'disabled':''} onclick="S.ui.clientesPage--; render();">← Anterior</button>
+        <button class="btn btn-ghost text-xs" ${S.ui.clientesPage>=totalPaginas-1?'disabled':''} onclick="S.ui.clientesPage++; render();">Siguiente →</button>
+      </div>
+    </div>
+  </div>`;
+}
+window.setFiltro = function(k,v){ S.ui.clienteFiltro[k]=v; S.ui.clientesPage=0; render(); }
+window.asignarComercialRapido = async function(clienteId,comercialId){
+  if(!isAdmin()) return;
+  const c = S.clientes.find(x=>x.id===clienteId);
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {comercialId: comercialId||null});
+  logAction('Reasignación de cliente', `${c?c.nombreEmpresa:clienteId} → ${nombreComercial(comercialId)}`);
+}
+// Abre Claude (claude.ai) en una pestaña nueva con el prompt de investigación ya escrito para este cliente.
+// La respuesta pide una ficha en el mismo formato .txt que acepta "Subir ficha comercial (.txt)".
+function promptInvestigacion(c){
+  const datos = [
+    ['Empresa', c.nombreEmpresa], ['Persona de contacto', c.personaContacto], ['Tipo', c.tipoCliente],
+    ['Ciudad', c.ciudad], ['Provincia', c.provincia], ['Web', c.web], ['Instagram', c.instagram ? '@'+c.instagram.replace(/^@/,'') : '']
+  ].filter(([,v])=>v).map(([k,v])=>`- ${k}: ${v}`).join('\n');
+  const prompt =
+`Haz una investigación comercial de este cliente potencial para EntradasYa (entradasya.es, plataforma de venta de entradas para organizadores de eventos, salas y promotores). Busca en la web información real y actual, y marca como "por confirmar" lo que no puedas verificar.
+
+Datos que tengo:
+${datos}
+
+Averigua: qué es realmente, tamaño, qué eventos organiza y con qué frecuencia, qué plataforma de venta de entradas usa hoy, qué oportunidad hay para EntradasYa y cuál es el mejor punto de entrada para abordarle.
+
+Entrégame el resultado como un archivo .txt descargable con una línea por campo en formato ETIQUETA: valor, usando exactamente estas etiquetas: EMPRESA, CONTACTO, TIPO, NATURALEZA, TAMANO, AFORO (solo el número de personas de la sala más grande, o capacidad total si es un único espacio), TELEFONO, WHATSAPP, EMAIL, INSTAGRAM, WEB, CIUDAD, PROVINCIA, ACTIVIDAD, SITUACION, OPORTUNIDAD, PUNTO_ENTRADA, OBSERVACIONES. Cada campo en una sola línea y, si necesitas separar ideas dentro de un campo, usa el símbolo | en lugar de saltos de línea. Sin guiones largos ni emojis.`;
+  return prompt;
+}
+window.investigarConClaude = function(clienteId){
+  const c = S.clientes.find(x=>x.id===clienteId);
+  if(!puedeAbrir(c)){ alert('No tienes acceso a este cliente.'); return; }
+  window.open('https://claude.ai/new?q=' + encodeURIComponent(promptInvestigacion(c)), '_blank', 'noopener');
+  logAction('Investigación con Claude abierta', c.nombreEmpresa);
+}
+window.investigarConChatGPT = function(clienteId){
+  const c = S.clientes.find(x=>x.id===clienteId);
+  if(!puedeAbrir(c)){ alert('No tienes acceso a este cliente.'); return; }
+  window.open('https://chatgpt.com/?q=' + encodeURIComponent(promptInvestigacion(c)), '_blank', 'noopener');
+  logAction('Investigación con ChatGPT abierta', c.nombreEmpresa);
+}
+window.cambiarCampoCliente = async function(clienteId, campo, valor){
+  if(campo!=='estado' && campo!=='prioridad') return;
+  const c = S.clientes.find(x=>x.id===clienteId);
+  if(!puedeAbrir(c)){ alert('No tienes acceso a este cliente.'); render(); return; }
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {[campo]: valor});
+  logAction(campo==='estado' ? 'Cambio de estado comercial' : 'Cambio de prioridad', `${c?c.nombreEmpresa:clienteId} → ${valor}`);
+}
+function nombreComercial(id){ const c = S.comerciales.find(x=>x.id===id); return c?c.nombre:'Sin asignar'; }
+window.openCliente = function(id){
+  const c = S.clientes.find(x=>x.id===id);
+  if(!puedeAbrir(c)){ alert('Este contacto no está asignado a ti ni lo has creado tú. Solo puedes trabajar con tus clientes asignados o los que tú mismo añadas.'); return; }
+  S.ui.clienteDetalleId=id; S.ui.clienteDetalleTab='investigacion'; S.ui.correoForm={}; render();
+}
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+/* ---- Importar ficha comercial (.txt con formato ETIQUETA: valor) ---- */
+function aforoDeFicha(d){
+  const directo = d.aforo ? extraerAforo('aforo '+d.aforo) : null;
+  const num = directo || (String(d.aforo||'').match(/^\d+$/) ? parseInt(d.aforo,10) : null);
+  return num || extraerAforo(...textoInvestigacionAforo(d)) || (/^\d{1,3}(?:[.,]\d{3})+$|^\d+$/.test(String(d.tamano||'').trim()) ? numAforo(d.tamano.trim()) : null);
+}
+function parsearFichaTxt(texto){
+  const campos = {};
+  texto.split(/\r?\n/).forEach(linea=>{
+    const m = linea.match(/^\s*([A-Za-zÁÉÍÓÚÑáéíóúñ_]+)\s*:\s*(.*)$/);
+    if(!m) return;
+    const clave = m[1].trim().toUpperCase();
+    const valor = m[2].trim().replace(/\s*\|\s*/g, '\n');
+    campos[clave] = valor;
+  });
+  return {
+    nombreEmpresa: campos['EMPRESA']||'',
+    personaContacto: campos['CONTACTO']||campos['RESPONSABLE']||'',
+    tipoCliente: campos['TIPO']||'',
+    naturaleza: campos['NATURALEZA']||'',
+    tamano: campos['TAMANO']||campos['TAMAÑO']||'',
+    aforo: campos['AFORO']||campos['CAPACIDAD']||'',
+    telefono: campos['TELEFONO']||campos['TELÉFONO']||'',
+    whatsapp: campos['WHATSAPP']||'',
+    email: campos['EMAIL']||'',
+    instagram: (campos['INSTAGRAM']||'').replace(/^@/,''),
+    web: campos['WEB']||'',
+    ciudad: campos['CIUDAD']||'',
+    provincia: campos['PROVINCIA']||'',
+    actividad: campos['ACTIVIDAD']||'',
+    situacion: campos['SITUACION']||campos['SITUACIÓN']||'',
+    oportunidad: campos['OPORTUNIDAD']||'',
+    puntoEntrada: campos['PUNTO_ENTRADA']||'',
+    observaciones: campos['OBSERVACIONES']||''
+  };
+}
+
+// Botón global en Clientes: sube una ficha y crea/actualiza el cliente correspondiente (TODOS los datos)
+window.importarFichaGlobal = function(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(e){
+   try{
+    const d = parsearFichaTxt(e.target.result);
+    if(!d.nombreEmpresa){ alert('El archivo no tiene una línea "EMPRESA: ...", no se puede identificar el cliente.'); return; }
+    const existente = S.clientes.find(c => c.nombreEmpresa.trim().toLowerCase() === d.nombreEmpresa.trim().toLowerCase());
+    if(existente && !isAdmin() && !puedeAbrir(existente)){
+      alert(`"${existente.nombreEmpresa}" ya existe en el CRM pero no está asignado a ti ni lo creaste tú. No puedes modificarlo; avisa al administrador si crees que debería ser tuyo.`);
+      event.target.value = ''; return;
+    }
+    const investigacion = { naturaleza:d.naturaleza, tamano:d.tamano, aforo:aforoDeFicha(d), actividad:d.actividad, situacion:d.situacion, oportunidad:d.oportunidad, puntoEntrada:d.puntoEntrada, observaciones:d.observaciones, fecha:todayISO() };
+    let idFinal, modo;
+    if(existente){
+      if(!confirm(`Ya existe "${existente.nombreEmpresa}" en el CRM. ¿Actualizar TODOS sus datos de contacto y su ficha de investigación con este archivo? (se sobrescribirá lo que ya hubiera)`)){ event.target.value=''; return; }
+      const patch = { investigacion };
+      // Se actualizan siempre todos los datos que traiga el archivo (si un campo viene vacío, se deja como estaba)
+      if(d.personaContacto) patch.personaContacto = d.personaContacto;
+      if(d.tipoCliente) patch.tipoCliente = d.tipoCliente;
+      if(d.telefono) patch.telefono = d.telefono;
+      if(d.whatsapp) patch.whatsapp = d.whatsapp;
+      if(d.email) patch.email = d.email;
+      if(d.instagram) patch.instagram = d.instagram;
+      if(d.web) patch.web = d.web;
+      if(d.ciudad) patch.ciudad = d.ciudad;
+      if(d.provincia) patch.provincia = d.provincia;
+      await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), existente.id), patch);
+      logAction('Ficha importada (actualiza todos los datos del cliente)', existente.nombreEmpresa);
+      idFinal = existente.id; modo = 'ACTUALIZADO (cliente ya existía)';
+      S.ui.clienteDetalleId = existente.id; S.ui.clienteDetalleTab='investigacion';
+    } else {
+      const nuevo = {
+        nombreEmpresa: d.nombreEmpresa, personaContacto:d.personaContacto, tipoCliente:d.tipoCliente||'Otro',
+        telefono:d.telefono, whatsapp:d.whatsapp, email:d.email, instagram:d.instagram, web:d.web,
+        estado:'Nuevo', prioridad:'BAJO', ciudad:d.ciudad, provincia:d.provincia,
+        comercialId: null, creadoPor: S.session.userId,
+        fechaAlta: todayISO(), investigacion
+      };
+      const ref = await S.fb.addDoc(col('crm2_clientes'), nuevo);
+      logAction('Ficha importada (cliente nuevo)', d.nombreEmpresa);
+      idFinal = ref.id; modo = 'CREADO NUEVO (no encontré uno con ese nombre exacto)';
+      S.ui.clienteDetalleId = ref.id; S.ui.clienteDetalleTab='investigacion';
+    }
+    // Verificación: releemos lo que ha quedado guardado de verdad en Firestore
+    const snap = await S.fb.getDoc(S.fb.doc(col('crm2_clientes'), idFinal));
+    const guardado = snap.data();
+    alert(`${modo}\n\nEsto es lo que ha quedado guardado:\nEmpresa: ${guardado.nombreEmpresa}\nInstagram: ${guardado.instagram || '(vacío)'}\nTeléfono: ${guardado.telefono || '(vacío)'}\nCiudad: ${guardado.ciudad || '(vacío)'}`);
+    event.target.value = '';
+    render();
+   }catch(err){
+     alert('ERROR al importar la ficha: ' + (err && err.message ? err.message : err));
+     console.error(err);
+   }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+// Dentro de la ficha de un cliente ya abierto: sube un archivo y rellena el formulario de Investigación (sin guardar todavía)
+window.importarFichaCliente = function(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(e){
+   try{
+    const d = parsearFichaTxt(e.target.result);
+    const set = (id,val)=>{ const el=document.getElementById(id); if(el && val) el.value = val; };
+    set('inv_naturaleza', d.naturaleza);
+    set('inv_tamano', d.tamano);
+    set('inv_aforo', aforoDeFicha(d));
+    set('inv_actividad', d.actividad);
+    set('inv_situacion', d.situacion);
+    set('inv_oportunidad', d.oportunidad);
+    set('inv_puntoEntrada', d.puntoEntrada);
+    set('inv_observaciones', d.observaciones);
+    const clienteId = S.ui.clienteDetalleId;
+    const investigacion = { naturaleza:d.naturaleza, tamano:d.tamano, aforo:aforoDeFicha(d), actividad:d.actividad, situacion:d.situacion, oportunidad:d.oportunidad, puntoEntrada:d.puntoEntrada, observaciones:d.observaciones, fecha:todayISO() };
+    const patch = { investigacion };
+    if(d.personaContacto) patch.personaContacto = d.personaContacto;
+    if(d.tipoCliente) patch.tipoCliente = d.tipoCliente;
+    if(d.telefono) patch.telefono = d.telefono;
+    if(d.whatsapp) patch.whatsapp = d.whatsapp;
+    if(d.email) patch.email = d.email;
+    if(d.instagram) patch.instagram = d.instagram;
+    if(d.web) patch.web = d.web;
+    if(d.ciudad) patch.ciudad = d.ciudad;
+    if(d.provincia) patch.provincia = d.provincia;
+    await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), patch);
+    logAction('Ficha importada desde la ficha del cliente (datos de contacto + investigación)', S.clientes.find(x=>x.id===clienteId)?.nombreEmpresa || clienteId);
+    const snap = await S.fb.getDoc(S.fb.doc(col('crm2_clientes'), clienteId));
+    const guardado = snap.data();
+    alert(`Guardado.\n\nEsto ha quedado en el cliente:\nInstagram: ${guardado.instagram || '(vacío)'}\nTeléfono: ${guardado.telefono || '(vacío)'}\nCiudad: ${guardado.ciudad || '(vacío)'}`);
+    event.target.value = '';
+    render();
+   }catch(err){
+     alert('ERROR al importar la ficha: ' + (err && err.message ? err.message : err));
+     console.error(err);
+   }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+/* ---- Formulario nuevo/editar cliente ---- */
+window.openClienteForm = function(id){
+  if(!isAdmin()){ alert('Los comerciales no podéis editar la ficha del contacto directamente. Sube una ficha comercial (.txt) actualizada, o avisa al administrador.'); return; }
+  S.ui.showClienteForm = id || 'new'; render();
+}
+window.closeClienteForm = function(){ S.ui.showClienteForm = null; render(); }
+function modalClienteForm(){
+  const editing = S.ui.showClienteForm!=='new';
+  const c = editing ? S.clientes.find(x=>x.id===S.ui.showClienteForm) : {};
+  const comercialDefault = isAdmin() ? (c.comercialId||'') : S.session.comercialId;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closeClienteForm()">
+    <div class="panel p-6 w-full max-w-xl mt-4">
+      <div class="flex justify-between items-center mb-4">
+        <div class="font-bold text-lg">${editing?'Editar cliente':'Nuevo cliente'}</div>
+        <button class="btn btn-ghost text-xs" onclick="closeClienteForm()">Cerrar</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2"><label>Nombre de empresa / sala / promotora *</label><input id="cf_nombreEmpresa" value="${esc(c.nombreEmpresa)}"></div>
+        <div><label>Persona de contacto</label><input id="cf_personaContacto" value="${esc(c.personaContacto)}"></div>
+        <div><label>Tipo de cliente</label><select id="cf_tipoCliente">${TIPOS.map(t=>`<option ${c.tipoCliente===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        <div><label>Teléfono</label><input id="cf_telefono" value="${esc(c.telefono)}"></div>
+        <div><label>WhatsApp</label><input id="cf_whatsapp" value="${esc(c.whatsapp)}"></div>
+        <div><label>Email</label><input id="cf_email" value="${esc(c.email)}"></div>
+        <div><label>Instagram</label><input id="cf_instagram" placeholder="@usuario" value="${esc(c.instagram)}"></div>
+        <div><label>Web</label><input id="cf_web" placeholder="https://" value="${esc(c.web)}"></div>
+        <div><label>Estado comercial</label><select id="cf_estado">${ESTADOS.map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}</select></div>
+        <div><label>Prioridad</label><select id="cf_prioridad">${PRIORIDADES.map(p=>`<option ${(c.prioridad||'BAJO')===p?'selected':''}>${p}</option>`).join('')}</select></div>
+        <div><label>Ciudad / Población</label><input id="cf_ciudad" value="${esc(c.ciudad)}"></div>
+        <div><label>Provincia</label><input id="cf_provincia" value="${esc(c.provincia)}"></div>
+        ${isAdmin()?`<div class="col-span-2"><label>Comercial asignado</label><select id="cf_comercialId"><option value="">Sin asignar</option>${S.comerciales.map(cm=>`<option value="${cm.id}" ${comercialDefault===cm.id?'selected':''}>${esc(cm.nombre)}</option>`).join('')}</select></div>`:''}
+      </div>
+      <button class="btn btn-accent w-full mt-5" onclick="saveCliente(${editing?`'${c.id}'`:'null'})">Guardar cliente</button>
+    </div>
+  </div>`;
+}
+window.saveCliente = async function(id){
+  if(!isAdmin()){ alert('Los comerciales no podéis editar la ficha del contacto directamente. Sube una ficha comercial (.txt), o avisa al administrador.'); return; }
+  const g = k=>document.getElementById('cf_'+k).value;
+  const data = {
+    nombreEmpresa: g('nombreEmpresa').trim(), personaContacto:g('personaContacto').trim(),
+    tipoCliente:g('tipoCliente'), telefono:g('telefono').trim(), whatsapp:g('whatsapp').trim(),
+    email:g('email').trim().toLowerCase(), instagram:g('instagram').trim().replace(/^@/,''),
+    web:g('web').trim(),
+    estado:g('estado'), prioridad:g('prioridad'), ciudad:g('ciudad').trim(), provincia:g('provincia').trim(),
+    comercialId: document.getElementById('cf_comercialId').value||null
+  };
+  if(!data.nombreEmpresa){ alert('El nombre de empresa es obligatorio.'); return; }
+
+  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), data); logAction('Cliente editado', data.nombreEmpresa); }
+  else{ data.fechaAlta = todayISO(); await S.fb.addDoc(col('crm2_clientes'), data); logAction('Cliente creado', data.nombreEmpresa); }
+  S.ui.showClienteForm = null; render();
+}
+window.deleteCliente = async function(id){
+  if(!isAdmin()){ alert('Solo el administrador puede eliminar clientes.'); return; }
+  if(!confirm('¿Eliminar este cliente? Esta acción no se puede deshacer.')) return;
+  const c = S.clientes.find(x=>x.id===id);
+  await S.fb.deleteDoc(S.fb.doc(col('crm2_clientes'), id));
+  logAction('Cliente eliminado', c?c.nombreEmpresa:id);
+  S.ui.clienteDetalleId=null; render();
+}
+window.toggleSelectCliente = function(id, checked){
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  if(checked) sel.add(id); else sel.delete(id);
+  render();
+}
+window.toggleSelectAllClientes = function(checked){
+  const f = S.ui.clienteFiltro;
+  let cs = misClientes();
+  if(f.q) cs = cs.filter(c=> coincideBusqueda(c, f.q));
+  if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
+  if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
+  if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
+  if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  if(f.investigacion==='hecha') cs = cs.filter(c=>!!c.investigacion);
+  if(f.investigacion==='pendiente') cs = cs.filter(c=>!c.investigacion);
+  cs = filtrarPorAforo(cs, f.aforo);
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  if(checked) cs.forEach(c=>sel.add(c.id)); else cs.forEach(c=>sel.delete(c.id));
+  render();
+}
+window.deleteSelectedClientes = async function(){
+  if(!isAdmin()){ alert('Solo el administrador puede eliminar clientes.'); return; }
+  const sel = S.ui.selectedIds || (S.ui.selectedIds = new Set());
+  if(!sel.size) return;
+  if(!confirm(`¿Eliminar ${sel.size} cliente(s) seleccionados? Esta acción no se puede deshacer.`)) return;
+  const ids = Array.from(sel);
+  let batch = S.fb.writeBatch(S.db); let count=0;
+  for(const id of ids){
+    batch.delete(S.fb.doc(col('crm2_clientes'), id));
+    count++;
+    if(count===450){ await batch.commit(); batch = S.fb.writeBatch(S.db); count=0; }
+  }
+  if(count>0) await batch.commit();
+  logAction('Eliminación múltiple de clientes', `${ids.length} cliente(s)`);
+  sel.clear();
+  render();
+}
+
+/* ---- Detalle de cliente (modal con tabs) ---- */
+function modalClienteDetalle(){
+  const c = S.clientes.find(x=>x.id===S.ui.clienteDetalleId);
+  if(!c){ S.ui.clienteDetalleId=null; return ''; }
+  const p = calcPotencial(c);
+  const tabs = [['investigacion','Investigación comercial'],['historial','Historial'],['correo','Crear correo'],['eventos','Eventos'], ...(isAdmin()?[['comisiones','Comisiones']]:[])];
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closeClienteDetalle()">
+    <div class="panel p-6 w-full max-w-3xl mt-4">
+      <div class="flex justify-between items-start mb-1">
+        <div>
+          <div class="font-bold text-lg">${esc(c.nombreEmpresa)}</div>
+          <div class="text-sm" style="color:var(--ink-dim)">${esc(c.tipoCliente||'-')} · ${esc(c.ciudad||'-')} ${c.provincia?', '+esc(c.provincia):''} · ${nombreComercial(c.comercialId)}</div>
+        </div>
+        <div class="flex gap-2">
+          <span class="text-xs" style="color:var(--ink-dim);align-self:center">Investigar:</span>
+          <button class="ai-chip ai-claude" style="align-self:center" title="Investigación comercial con Claude" onclick="investigarConClaude('${c.id}')">Claude</button>
+          <button class="ai-chip ai-gpt" style="align-self:center" title="Investigación comercial con ChatGPT" onclick="investigarConChatGPT('${c.id}')">ChatGPT</button>
+          ${isAdmin()?`
+            <button class="btn btn-ghost text-xs" onclick="openClienteForm('${c.id}')">Editar</button>
+            <button class="btn btn-danger text-xs" onclick="deleteCliente('${c.id}')">Eliminar</button>
+          `:`
+            <button class="btn btn-ghost text-xs" onclick="avisarAdmin('${c.id}')">🚨 Avisar al administrador</button>
+          `}
+          <button class="btn btn-ghost text-xs" onclick="closeClienteDetalle()">Cerrar</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-3 text-xs mt-2 mb-4" style="color:var(--ink-dim)">
+        <span>${esc(c.personaContacto||'-')}</span><span>·</span><span>${esc(c.telefono||'-')}</span><span>·</span><span>${esc(c.email||'-')}</span>${c.instagram?`<span>·</span><span>@${esc(c.instagram)}</span>`:''}
+        <span class="badge ml-1" style="background:${estadoColor(c.estado)}22;color:${estadoColor(c.estado)}">${esc(c.estado||'-')}</span>
+        <span class="badge" style="${prioridadColor(c.prioridad)}">${c.prioridad||'-'}</span>
+      </div>
+      <div class="flex gap-1 mb-4 border-b pb-2" style="border-color:var(--line)">
+        ${tabs.map(([k,l])=>`<div class="tab ${S.ui.clienteDetalleTab===k?'active':''}" onclick="setDetalleTab('${k}')">${l}</div>`).join('')}
+      </div>
+      ${ S.ui.clienteDetalleTab==='historial' ? tabHistorial(c) :
+         S.ui.clienteDetalleTab==='comisiones' ? (isAdmin()?tabComisiones(c):'') :
+         S.ui.clienteDetalleTab==='eventos' ? tabEventos(c) :
+         S.ui.clienteDetalleTab==='correo' ? tabCorreo(c) :
+         tabInvestigacion(c) }
+    </div>
+  </div>`;
+}
+
+/* ---- Crear correo: formulario de contexto -> prompt para Claude / ChatGPT ---- */
+const CORREO_TIPOS = ["Primer contacto","Seguimiento tras primer contacto","Seguimiento sin respuesta","Propuesta comercial","Respuesta a una duda u objeción","Confirmación de reunión o llamada","Cierre / siguiente paso","Postventa tras un evento","Reactivar cliente inactivo","Otro"];
+const CORREO_TONOS = ["Cercano y profesional","Formal","Directo y breve","Cálido y personal","Comercial persuasivo"];
+const CORREO_LONGITUDES = ["Muy corto (3-4 líneas)","Corto (hasta 120 palabras)","Medio (120-200 palabras)","Detallado (más de 200 palabras)"];
+function correoDefaults(){ return { tipo:CORREO_TIPOS[0], tono:CORREO_TONOS[0], longitud:CORREO_LONGITUDES[1], incInvestigacion:true, incHistorial:true }; }
+function correoVal(k){ const f = S.ui.correoForm||{}; const d = correoDefaults(); return f[k]!==undefined ? f[k] : d[k]; }
+
+function promptCorreo(c){
+  const f = k => (correoVal(k)||'').toString().trim();
+  const inv = c.investigacion || {};
+  const remitente = f('remitente') || (S.session && S.session.nombre) || '';
+  const lineas = (arr)=>arr.filter(([,v])=>v).map(([k,v])=>`- ${k}: ${v}`).join('\n');
+
+  const destinatario = lineas([
+    ['Empresa', c.nombreEmpresa], ['Persona de contacto', c.personaContacto], ['Tipo de cliente', c.tipoCliente],
+    ['Ciudad', [c.ciudad,c.provincia].filter(Boolean).join(', ')], ['Web', c.web], ['Instagram', c.instagram ? '@'+c.instagram.replace(/^@/,'') : ''],
+    ['Estado comercial actual', c.estado]
+  ]);
+  const investigacion = correoVal('incInvestigacion') ? lineas([
+    ['Naturaleza', inv.naturaleza], ['Tamaño', inv.tamano], ['Actividad', inv.actividad], ['Situación actual', inv.situacion],
+    ['Oportunidad para EntradasYa', inv.oportunidad], ['Punto de entrada recomendado', inv.puntoEntrada]
+  ]) : '';
+  let historial = '';
+  if(correoVal('incHistorial')){
+    const hs = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')).slice(0,5);
+    historial = hs.map(h=>`- ${h.fecha||''} | ${h.tipo||''} | ${h.resultado||''}${h.comentarios?' | '+h.comentarios:''}${h.proximoPaso?' | Próximo paso: '+h.proximoPaso:''}`).join('\n');
+  }
+  const bloques = [];
+  bloques.push(`Redacta un correo electrónico en español de España, listo para enviar, de parte de ${remitente||'EntradasYa'}${f('cargo')?' ('+f('cargo')+')':''} en EntradasYa (entradasya.es), plataforma de venta de entradas para organizadores de eventos, salas y promotores.`);
+  bloques.push(`TIPO DE CORREO: ${f('tipo')}`);
+  bloques.push(`DESTINATARIO:\n${destinatario}`);
+  if(investigacion) bloques.push(`INFORMACIÓN COMERCIAL DEL CLIENTE:\n${investigacion}`);
+  if(historial) bloques.push(`ÚLTIMOS CONTACTOS CON ESTE CLIENTE (del más reciente al más antiguo):\n${historial}`);
+  const ctx = lineas([
+    ['Objetivo del correo', f('objetivo')], ['Contexto y situación', f('contexto')], ['Puntos clave a incluir', f('puntos')],
+    ['Oferta, condiciones o datos económicos', f('oferta')], ['Llamada a la acción deseada', f('cta')],
+    ['Fecha, plazo o evento concreto', f('fecha')], ['Objeciones o dudas del cliente a resolver', f('objeciones')],
+    ['Lo que NO debe decirse', f('evitar')], ['Instrucciones extra', f('extra')]
+  ]);
+  if(ctx) bloques.push(`CONTEXTO Y DATOS QUE DEBES USAR:\n${ctx}`);
+  bloques.push(`ESTILO:\n- Tono: ${f('tono')}\n- Extensión: ${f('longitud')}\n- Firma: ${remitente||'EntradasYa'}${f('firma')?'\n'+f('firma'):''}`);
+  bloques.push(`REGLAS:\n- Usa solo los datos que te doy, no inventes cifras, condiciones ni promesas.\n- Una sola llamada a la acción clara al final.\n- Sin guiones largos ni emojis.\n- Entrégame el asunto (propón 2 alternativas) y después el cuerpo del correo.`);
+  return bloques.join('\n\n');
+}
+function tabCorreo(c){
+  const inp = (k,label,ph,rows)=> rows
+    ? `<div><label>${label}</label><textarea rows="${rows}" placeholder="${ph||''}" oninput="setCorreoCampo('${k}',this.value,'${c.id}')">${esc(correoVal(k))}</textarea></div>`
+    : `<div><label>${label}</label><input placeholder="${ph||''}" value="${esc(correoVal(k))}" oninput="setCorreoCampo('${k}',this.value,'${c.id}')"></div>`;
+  const sel = (k,label,opts)=>`<div><label>${label}</label><select onchange="setCorreoCampo('${k}',this.value,'${c.id}')">${opts.map(o=>`<option ${correoVal(k)===o?'selected':''}>${o}</option>`).join('')}</select></div>`;
+  const chk = (k,label)=>`<label style="display:flex;align-items:center;gap:.4rem;font-size:.8rem"><input type="checkbox" style="width:auto" ${correoVal(k)?'checked':''} onchange="setCorreoCampo('${k}',this.checked,'${c.id}')"> ${label}</label>`;
+  return `
+  <div>
+    <p class="text-xs mb-3" style="color:var(--ink-dim)">Rellena el contexto. El CRM construye un prompt con los datos de este cliente y lo abres en Claude o ChatGPT para que redacte el correo. No se guarda nada, es solo para esta sesión.</p>
+    <div class="grid md:grid-cols-2 gap-3 mb-3">
+      ${sel('tipo','Tipo de correo',CORREO_TIPOS)}
+      ${sel('tono','Tono',CORREO_TONOS)}
+      ${sel('longitud','Extensión',CORREO_LONGITUDES)}
+      ${inp('fecha','Fecha, plazo o evento concreto','Ej: evento 12 de diciembre, responder antes del viernes')}
+    </div>
+    <div class="space-y-3 mb-3">
+      ${inp('objetivo','Objetivo del correo *','Qué quiero conseguir con este correo')}
+      ${inp('contexto','Contexto y situación',' Qué ha pasado hasta ahora, de dónde viene el contacto, qué se habló',3)}
+      ${inp('puntos','Puntos clave a incluir','Un punto por línea',3)}
+      ${inp('oferta','Oferta, condiciones o datos económicos','Comisiones, precios, ventajas, lo acordado...',2)}
+      <div class="grid md:grid-cols-2 gap-3">
+        ${inp('cta','Llamada a la acción','Ej: agendar llamada de 15 min, enviar fecha del evento')}
+        ${inp('objeciones','Objeciones o dudas a resolver','Ej: ya trabajan con otra plataforma')}
+      </div>
+      ${inp('evitar','Lo que NO debe decirse','Ej: no mencionar precios todavía')}
+      ${inp('extra','Instrucciones extra','Cualquier otra indicación para la IA',2)}
+    </div>
+    <div class="panel2 p-3 mb-3">
+      <div class="kicker mb-2">Remitente</div>
+      <div class="grid md:grid-cols-3 gap-3 mb-2">
+        ${inp('remitente','Nombre',esc((S.session&&S.session.nombre)||''))}
+        ${inp('cargo','Cargo','Ej: Fundador, Comercial')}
+        ${inp('firma','Datos de firma','Teléfono, web, email...')}
+      </div>
+      <div class="flex flex-wrap gap-4">
+        ${chk('incInvestigacion','Incluir investigación comercial del cliente')}
+        ${chk('incHistorial','Incluir últimos 5 contactos del historial')}
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <button class="ai-chip ai-claude" onclick="abrirCorreoIA('claude','${c.id}')">Abrir en Claude</button>
+      <button class="ai-chip ai-gpt" onclick="abrirCorreoIA('chatgpt','${c.id}')">Abrir en ChatGPT</button>
+      <button class="btn btn-ghost text-xs" onclick="copiarPromptCorreo('${c.id}')">Copiar prompt</button>
+      <button class="btn btn-ghost text-xs" onclick="S.ui.correoForm={}; render();">Limpiar formulario</button>
+    </div>
+    <label>Vista previa del prompt (editable antes de copiar o enviar)</label>
+    <textarea id="correo_preview" rows="12" style="font-family:ui-monospace,monospace;font-size:.75rem" oninput="S.ui.correoPromptManual=this.value">${esc(promptCorreo(c))}</textarea>
+    <p class="text-xs mt-1" style="color:var(--ink-dim)">Si el prompt es muy largo y la IA lo recorta al abrirse, usa "Copiar prompt" y pégalo en un chat nuevo.</p>
+  </div>`;
+}
+window.setCorreoCampo = function(k,v,clienteId){
+  S.ui.correoForm = S.ui.correoForm || {};
+  S.ui.correoForm[k] = v;
+  S.ui.correoPromptManual = null;
+  const c = S.clientes.find(x=>x.id===clienteId);
+  const pv = document.getElementById('correo_preview');
+  if(c && pv) pv.value = promptCorreo(c);
+}
+function promptCorreoActual(c){
+  const pv = document.getElementById('correo_preview');
+  return (pv && pv.value.trim()) ? pv.value : promptCorreo(c);
+}
+window.abrirCorreoIA = function(ia, clienteId){
+  const c = S.clientes.find(x=>x.id===clienteId);
+  if(!puedeAbrir(c)){ alert('No tienes acceso a este cliente.'); return; }
+  if(!(correoVal('objetivo')||'').toString().trim() && !confirm('No has indicado el objetivo del correo. ¿Abrir igualmente?')) return;
+  const q = encodeURIComponent(promptCorreoActual(c));
+  window.open((ia==='claude' ? 'https://claude.ai/new?q=' : 'https://chatgpt.com/?q=') + q, '_blank', 'noopener');
+  logAction('Correo con '+(ia==='claude'?'Claude':'ChatGPT')+' abierto', c.nombreEmpresa);
+}
+window.copiarPromptCorreo = async function(clienteId){
+  const c = S.clientes.find(x=>x.id===clienteId);
+  const txt = promptCorreoActual(c);
+  try{ await navigator.clipboard.writeText(txt); alert('Prompt copiado.'); }
+  catch(e){ const pv=document.getElementById('correo_preview'); if(pv){ pv.select(); document.execCommand('copy'); alert('Prompt copiado.'); } }
+}
+
+window.closeClienteDetalle = function(){ S.ui.clienteDetalleId=null; render(); }
+window.setDetalleTab = function(t){ S.ui.clienteDetalleTab=t; render(); }
+window.avisarAdmin = async function(clienteId){
+  const c = S.clientes.find(x=>x.id===clienteId);
+  const mensaje = prompt(`¿Qué necesitas que revise el administrador sobre "${c?c.nombreEmpresa:''}"?`);
+  if(mensaje==null || !mensaje.trim()) return;
+  await logAction('Aviso de comercial', `${c?c.nombreEmpresa:clienteId}: ${mensaje.trim()}`);
+  alert('Aviso enviado al administrador.');
+  render();
+}
+
+function tabHistorial(c){
+  const hs = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  return `
+  <div class="panel2 p-4 mb-4">
+    <div class="font-semibold text-sm mb-2">Registrar contacto</div>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+      <div><label>Fecha</label><input id="hc_fecha" type="date" value="${todayISO()}"></div>
+      <div><label>Tipo de contacto</label><select id="hc_tipo">${TIPOS_CONTACTO.map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div><label>Resultado</label><select id="hc_resultado">${RESULTADOS.map(r=>`<option>${r}</option>`).join('')}</select></div>
+      <div class="col-span-2 md:col-span-3"><label>Comentarios</label><textarea id="hc_comentarios" rows="2"></textarea></div>
+      <div><label>Próximo paso</label><input id="hc_proximoPaso"></div>
+      <div><label>Fecha próximo seguimiento</label><input id="hc_proximoSeguimiento" type="date"></div>
+      <button class="btn btn-accent self-end" onclick="addContacto('${c.id}')">Guardar</button>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Resultado</th><th>Comentarios</th><th>Próximo paso</th><th>Próx. seguim.</th><th></th></tr></thead>
+    <tbody>
+    ${hs.length? hs.map(h=>`<tr><td>${fdate(h.fecha)}</td><td>${esc(h.tipo)}</td><td>${esc(h.resultado)}</td><td style="max-width:220px">${esc(h.comentarios||'-')}</td><td>${esc(h.proximoPaso||'-')}</td><td>${fdate(h.proximoSeguimiento)}</td><td><button class="btn btn-danger text-xs" onclick="deleteHistorial('${h.id}','${c.id}')">🗑️</button></td></tr>`).join('') : `<tr><td colspan="7" style="color:var(--ink-dim)">Sin contactos registrados.</td></tr>`}
+    </tbody>
+  </table>
+  </div>`;
+}
+window.addContacto = async function(clienteId){
+  const fecha=document.getElementById('hc_fecha').value||todayISO();
+  const tipo=document.getElementById('hc_tipo').value;
+  const resultado=document.getElementById('hc_resultado').value;
+  const comentarios=document.getElementById('hc_comentarios').value.trim();
+  const proximoPaso=document.getElementById('hc_proximoPaso').value.trim();
+  const proximoSeguimiento=document.getElementById('hc_proximoSeguimiento').value;
+  await S.fb.addDoc(col('crm2_contactos'), {clienteId, fecha, tipo, resultado, comentarios, proximoPaso, proximoSeguimiento});
+  if(proximoSeguimiento){ await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {proximoSeguimiento, ultimoContacto:fecha}); }
+  else { await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), {ultimoContacto:fecha}); }
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Contacto registrado', `${c?c.nombreEmpresa:clienteId} · ${tipo} · ${resultado}`);
+  render();
+}
+window.deleteHistorial = async function(id, clienteId){
+  const c = S.clientes.find(x=>x.id===clienteId);
+  if(!puedeAbrir(c)){ alert('No tienes acceso a este cliente.'); return; }
+  if(!confirm('¿Eliminar este registro del historial (próximo paso incluido)?')) return;
+  await S.fb.deleteDoc(S.fb.doc(col('crm2_contactos'), id));
+  logAction('Registro de historial eliminado', c?c.nombreEmpresa:clienteId);
+  render();
+}
+
+/* ---- Eventos (registro de ventas) y Comisiones (cálculo, solo admin) ---- */
+function tabEventos(c){
+  const ks = S.comisiones.filter(k=>k.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  return `
+  <div class="panel2 p-4 mb-4">
+    <div class="font-semibold text-sm mb-2">Registrar venta / evento</div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+      <div><label>Evento</label><input id="km_evento" placeholder="Nombre del evento"></div>
+      <div><label>Fecha del evento</label><input id="km_fechaEvento" type="date"></div>
+      <div><label>Entradas vendidas</label><input id="km_entradas" type="number" min="0"></div>
+      <div><label>Valor total vendido (€)</label><input id="km_valor" type="number" min="0" step="0.01"></div>
+      <button class="btn btn-accent" onclick="addComision('${c.id}')">Registrar</button>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table>
+    <thead><tr><th>Registro</th><th>Fecha del evento</th><th>Evento</th><th>Entradas</th><th>Valor vendido</th><th></th></tr></thead>
+    <tbody>
+    ${ks.length? ks.map(k=>`<tr><td style="color:var(--ink-dim)">${fdate(k.fecha)}</td><td><input type="date" value="${esc(k.fechaEvento||'')}" onchange="setFechaEvento('${k.id}',this.value)" style="min-width:9.5rem"></td><td class="font-semibold">${esc(k.evento)}</td><td>${numf(k.entradas)}</td><td>${money(k.valorTotal)}</td><td>${isAdmin()?`<button class="btn btn-danger text-xs" onclick="deleteComision('${k.id}','${c.id}')">🗑️</button>`:''}</td></tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}
+    </tbody>
+  </table>
+  </div>`;
+}
+window.addComision = async function(clienteId){
+  const evento=document.getElementById('km_evento').value.trim();
+  const entradas=Number(document.getElementById('km_entradas').value)||0;
+  const valorTotal=Number(document.getElementById('km_valor').value)||0;
+  if(!evento){ alert('Indica el evento.'); return; }
+  const fechaEvento=document.getElementById('km_fechaEvento').value||'';
+  await S.fb.addDoc(col('crm2_comisiones'), {clienteId, evento, entradas, valorTotal, fecha:todayISO(), fechaEvento});
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Comisión registrada', `${c?c.nombreEmpresa:clienteId} · ${evento} · ${money(valorTotal)}`);
+  render();
+}
+window.setFechaEvento = async function(id, fechaEvento){
+  await S.fb.updateDoc(S.fb.doc(col('crm2_comisiones'), id), {fechaEvento: fechaEvento||''});
+}
+window.deleteComision = async function(id, clienteId){
+  if(!isAdmin()){ alert('Solo el administrador puede eliminar registros de venta.'); return; }
+  if(!confirm('¿Eliminar este registro de venta? Afecta a la comisión calculada.')) return;
+  await S.fb.deleteDoc(S.fb.doc(col('crm2_comisiones'), id));
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Registro de venta eliminado', c?c.nombreEmpresa:clienteId);
+  render();
+}
+function tabComisiones(c){
+  const ks = S.comisiones.filter(k=>k.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const tasa = tasaComision(c);
+  const totalVentas = ks.reduce((a,k)=>a+Number(k.valorTotal||0),0);
+  const totalComision = totalVentas*tasa;
+  return `
+  <div class="panel2 p-4 mb-4">
+    <div class="kicker mb-1">Comisión aplicada a este cliente</div>
+    <div class="font-semibold">${c.comercialId? esc(nombreComercial(c.comercialId)) : 'Tú (administrador, sin asignar)'} · ${(tasa*100).toFixed(2)}%</div>
+    <div class="grid grid-cols-2 gap-3 mt-3">
+      <div><div class="text-xs" style="color:var(--ink-dim)">Total vendido</div><div class="text-xl font-bold">${money(totalVentas)}</div></div>
+      <div><div class="text-xs" style="color:var(--ink-dim)">Comisión total</div><div class="text-xl font-bold" style="color:var(--accent)">${money(totalComision)}</div></div>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table>
+    <thead><tr><th>Evento</th><th>Valor vendido</th><th>Comisión (${(tasa*100).toFixed(2)}%)</th></tr></thead>
+    <tbody>
+    ${ks.length? ks.map(k=>`<tr><td class="font-semibold">${esc(k.evento)}</td><td>${money(k.valorTotal)}</td><td>${money(k.valorTotal*tasa)}</td></tr>`).join('') : `<tr><td colspan="3" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}
+    </tbody>
+  </table>
+  </div>`;
+}
+
+/* ===================== SEGUIMIENTOS ===================== */
+/* ---- Investigación comercial (ficha de investigación por cliente) ---- */
+function tabInvestigacion(c){
+  const inv = c.investigacion || {};
+  return `
+  <div>
+    <label class="btn btn-ghost text-xs mb-3" style="cursor:pointer;display:inline-block">📤 Rellenar desde archivo (.txt)<input type="file" accept=".txt" style="display:none" onchange="importarFichaCliente(event)"></label>
+    ${inv.fecha ? `<div class="text-xs mb-3" style="color:var(--ink-dim)">Última investigación registrada: ${esc(inv.fecha)}</div>` : `<div class="text-xs mb-3" style="color:var(--ink-dim)">Sin investigación registrada todavía.</div>`}
+    <div class="space-y-3">
+      <div><label>Naturaleza / tipo de entidad</label><input id="inv_naturaleza" placeholder="Ej: asociación sin ánimo de lucro, agencia, sala..." value="${esc(inv.naturaleza)}"></div>
+      <div><label>Tamaño</label><input id="inv_tamano" placeholder="Ej: 2-9 empleados, aforo 300..." value="${esc(inv.tamano)}"></div>
+      <div><label>Aforo (nº de personas)</label><input id="inv_aforo" type="number" step="1" min="0" placeholder="Se rellena solo al guardar si lo detecta en el texto; con varias salas, pon la mayor" value="${aforoCliente(c)??''}"></div>
+      <div><label>Actividad real confirmada</label><textarea id="inv_actividad" rows="4" placeholder="Qué hace, eventos que organiza, con qué frecuencia...">${esc(inv.actividad)}</textarea></div>
+      <div><label>Situación actual (plataforma/ventas)</label><textarea id="inv_situacion" rows="2">${esc(inv.situacion)}</textarea></div>
+      <div><label>Oportunidad para EntradasYa</label><textarea id="inv_oportunidad" rows="2">${esc(inv.oportunidad)}</textarea></div>
+      <div><label>Punto de entrada recomendado</label><textarea id="inv_puntoEntrada" rows="2">${esc(inv.puntoEntrada)}</textarea></div>
+      <div><label>Observaciones / datos pendientes de confirmar</label><textarea id="inv_observaciones" rows="2">${esc(inv.observaciones)}</textarea></div>
+    </div>
+    <button class="btn btn-accent w-full mt-4" onclick="saveInvestigacion('${c.id}')">Guardar investigación</button>
+  </div>`;
+}
+window.saveInvestigacion = async function(clienteId){
+  const g = k => document.getElementById('inv_'+k).value.trim();
+  const investigacion = {
+    naturaleza: g('naturaleza'), tamano: g('tamano'), actividad: g('actividad'),
+    situacion: g('situacion'), oportunidad: g('oportunidad'), puntoEntrada: g('puntoEntrada'),
+    observaciones: g('observaciones'), fecha: todayISO()
+  };
+  const aforoManual = parseInt(g('aforo'),10);
+  investigacion.aforo = aforoManual>0 ? aforoManual : aforoDeFicha(investigacion);
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), clienteId), { investigacion });
+  const c = S.clientes.find(x=>x.id===clienteId);
+  logAction('Investigación comercial guardada', c?c.nombreEmpresa:clienteId);
+  render();
+}
+
+function viewSeguimientos(){
+  const hoy = todayISO();
+  const cs = misClientes().filter(c=>c.proximoSeguimiento);
+  const atrasados = cs.filter(c=>c.proximoSeguimiento<hoy).sort((a,b)=>a.proximoSeguimiento.localeCompare(b.proximoSeguimiento));
+  const hoyList = cs.filter(c=>c.proximoSeguimiento===hoy);
+  const proximos = cs.filter(c=>c.proximoSeguimiento>hoy).sort((a,b)=>a.proximoSeguimiento.localeCompare(b.proximoSeguimiento));
+  const tabla = (list,label,color)=>`
+    <div class="panel p-4 mb-4">
+      <div class="font-bold mb-3" style="${color?`color:${color}`:''}">${label} (${list.length})</div>
+      <div class="overflow-x-auto"><table>
+        <thead><tr><th>Cliente</th><th>Comercial</th><th>Último contacto</th><th>Próxima acción</th><th>Fecha</th><th></th></tr></thead>
+        <tbody>${list.length? list.map(c=>{
+          const ultimo = S.contactos.filter(h=>h.clienteId===c.id).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))[0];
+          return `<tr class="row" onclick="openCliente('${c.id}')">
+            <td class="font-semibold">${esc(c.nombreEmpresa)}</td>
+            <td style="color:var(--ink-dim)">${nombreComercial(c.comercialId)}</td>
+            <td>${fdate(c.ultimoContacto)}</td>
+            <td>${esc(ultimo?.proximoPaso||'-')}</td>
+            <td>${fdate(c.proximoSeguimiento)}</td>
+            <td onclick="event.stopPropagation()"><button class="btn btn-ghost text-xs" onclick="marcarSeguimientoHecho('${c.id}')">✓ Marcar hecho</button></td></tr>`;
+        }).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Nada aquí.</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+  return `
+  <h2 class="text-xl font-bold mb-1">Seguimientos</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Gestiona tus próximas acciones comerciales.</p>
+  ${tabla(atrasados,'Atrasados','#e0603e')}
+  ${tabla(hoyList,'Hoy','#e0a53e')}
+  ${tabla(proximos,'Próximos')}
+  `;
+}
+window.marcarSeguimientoHecho = async function(id){
+  const c = S.clientes.find(x=>x.id===id);
+  if(!puedeAbrir(c)){ alert('Este contacto no está asignado a ti.'); return; }
+  await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), id), {proximoSeguimiento:'', ultimoContacto:todayISO()});
+  logAction('Seguimiento marcado como hecho', c?c.nombreEmpresa:id);
+  render();
+}
+
+/* ===================== COMISIONES ===================== */
+function viewComisiones(){
+  if(!isAdmin()) return '<p style="color:var(--ink-dim)">No tienes acceso a esta sección.</p>';
+  const rowsDe = cs => S.comisiones.filter(k=>cs.some(c=>c.id===k.clienteId)).map(k=>({...k, cliente:S.clientes.find(x=>x.id===k.clienteId)})).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+
+  const tuyos = S.clientes.filter(c=>!c.comercialId);
+  const rowsTuyos = rowsDe(tuyos);
+  const totalTuyo = rowsTuyos.reduce((a,r)=>a+Number(r.valorTotal||0),0);
+
+  const bloqueComercial = cm => {
+    const propios = S.clientes.filter(c=>c.comercialId===cm.id);
+    const rows = rowsDe(propios);
+    const total = rows.reduce((a,r)=>a+Number(r.valorTotal||0),0);
+    const pct = cm.pctComision!=null ? Number(cm.pctComision) : PCT_COMERCIAL_DEFECTO*100;
+    return {cm, rows, total, pct, comision: total*(pct/100)};
+  };
+  const bloques = S.comerciales.map(bloqueComercial);
+  const totalGeneral = totalTuyo*PCT_ADMIN + bloques.reduce((a,b)=>a+b.comision,0);
+
+  const tabla = (rows, pct) => `
+    <div class="overflow-x-auto"><table>
+      <thead><tr><th>Fecha</th><th>Cliente</th><th>Evento</th><th>Entradas</th><th>Valor vendido</th><th>Comisión (${pct}%)</th></tr></thead>
+      <tbody>${rows.length? rows.map(r=>`<tr>
+        <td>${fdate(r.fecha)}</td><td class="font-semibold">${esc(r.cliente?.nombreEmpresa||'-')}</td>
+        <td>${esc(r.evento)}</td><td>${numf(r.entradas)}</td><td>${money(r.valorTotal)}</td><td>${money(r.valorTotal*(pct/100))}</td></tr>`).join('') : `<tr><td colspan="6" style="color:var(--ink-dim)">Sin ventas registradas.</td></tr>`}</tbody>
+    </table></div>`;
+
+  return `
+  <h2 class="text-xl font-bold mb-1">Comisiones</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Visible solo para ti. Cada comercial tiene su propio % (editable en la pestaña Comerciales); tú, sobre tus clientes sin asignar, cobras el ${(PCT_ADMIN*100)}%.</p>
+  <div class="panel p-4 mb-5"><div class="kicker">Comisión total generada (todos)</div><div class="stat-num" style="color:var(--accent)">${money(totalGeneral)}</div></div>
+
+  <div class="panel p-4 mb-4">
+    <div class="flex justify-between items-center mb-3">
+      <div class="font-bold">Tuyas (clientes sin asignar) · ${(PCT_ADMIN*100)}%</div>
+      <div class="text-sm">Ventas: <b>${money(totalTuyo)}</b> · Comisión: <b style="color:var(--accent)">${money(totalTuyo*PCT_ADMIN)}</b></div>
+    </div>
+    ${tabla(rowsTuyos, PCT_ADMIN*100)}
+  </div>
+
+  ${bloques.map(b=>`
+    <div class="panel p-4 mb-4">
+      <div class="flex justify-between items-center mb-3">
+        <div class="font-bold">${esc(b.cm.nombre)} · ${b.pct}% <button class="btn btn-ghost text-xs ml-2" onclick="editarPctComercial('${b.cm.id}')">editar %</button></div>
+        <div class="text-sm">Ventas: <b>${money(b.total)}</b> · Comisión: <b style="color:var(--accent)">${money(b.comision)}</b></div>
+      </div>
+      ${tabla(b.rows, b.pct)}
+    </div>
+  `).join('')}
+  `;
+}
+window.editarPctComercial = async function(id){
+  const cm = S.comerciales.find(x=>x.id===id);
+  const actual = cm.pctComision!=null ? cm.pctComision : PCT_COMERCIAL_DEFECTO*100;
+  const nuevo = prompt(`Nuevo % de comisión para ${cm.nombre}:`, actual);
+  if(nuevo==null) return;
+  const num = parseFloat(nuevo);
+  if(isNaN(num)||num<0){ alert('Valor no válido.'); return; }
+  await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), {pctComision:num});
+  logAction('% de comisión editado', `${cm.nombre} → ${num}%`);
+  render();
+}
+
+/* ===================== COMERCIALES ===================== */
+function viewComerciales(){
+  return `
+  <div class="flex items-center justify-between mb-5">
+    <div><h2 class="text-xl font-bold">Comerciales</h2><p class="text-sm" style="color:var(--ink-dim)">${S.comerciales.length} en el equipo</p></div>
+    ${isAdmin()?`<button class="btn btn-accent" onclick="openComercialForm()">+ Nuevo comercial</button>`:''}
+  </div>
+  <div class="panel p-4"><div class="overflow-x-auto"><table>
+    <thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Estado</th><th>% Comisión</th><th>Clientes</th>${isAdmin()?'<th></th>':''}</tr></thead>
+    <tbody>${S.comerciales.length? S.comerciales.map(cm=>{
+      const n = S.clientes.filter(c=>c.comercialId===cm.id).length;
+      const pct = cm.pctComision!=null ? cm.pctComision : PCT_COMERCIAL_DEFECTO*100;
+      return `<tr>
+        <td class="font-semibold">${esc(cm.nombre)}</td><td>${esc(cm.email)}</td><td>${esc(cm.telefono||'-')}</td>
+        <td>${fdate(cm.fechaIncorporacion)}</td>
+        <td><span class="badge" style="background:${cm.estado==='activo'?'#26332c':'#332626'};color:${cm.estado==='activo'?'#3ecf8e':'#e0603e'}">${cm.estado}</span></td>
+        <td>${pct}%</td>
+        <td><span style="cursor:pointer;text-decoration:underline;color:var(--info)" onclick="verClientesDeComercial('${cm.id}')">${n}</span></td>
+        ${isAdmin()?`<td><button class="btn btn-ghost text-xs" onclick="openComercialForm('${cm.id}')">Editar</button> <button class="btn btn-ghost text-xs" onclick="toggleAccesoComercial('${cm.id}')">${cm.estado==='activo'?'🚫 Revocar acceso':'✅ Reactivar'}</button> <button class="btn btn-danger text-xs" onclick="deleteComercial('${cm.id}')">Eliminar</button></td>`:''}
+      </tr>`;
+    }).join('') : `<tr><td colspan="8" style="color:var(--ink-dim)">Sin comerciales todavía.</td></tr>`}</tbody>
+  </table></div></div>`;
+}
+window.verClientesDeComercial = function(comercialId){
+  S.ui.clienteFiltro = {q:'',comercial:comercialId,estado:'',tipo:'',prioridad:'',investigacion:'',aforo:''};
+  S.ui.clientesPage = 0;
+  S.ui.view='clientes'; render();
+}
+window.toggleAccesoComercial = async function(id){
+  if(!isAdmin()) return;
+  const cm = S.comerciales.find(x=>x.id===id);
+  const nuevoEstado = cm.estado==='activo' ? 'inactivo' : 'activo';
+  if(!confirm(`¿${nuevoEstado==='activo'?'Reactivar':'Revocar el acceso de'} ${cm.nombre}?`)) return;
+  await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), {estado:nuevoEstado});
+  logAction(nuevoEstado==='activo'?'Acceso reactivado':'Acceso revocado', cm.nombre);
+  render();
+}
+window.openComercialForm = function(id){
+  if(!isAdmin()){ alert('Solo el administrador puede crear o editar comerciales.'); return; }
+  S.ui.showComercialForm = id || 'new'; render();
+}
+window.closeComercialForm = function(){ S.ui.showComercialForm = null; render(); }
+window.deleteComercial = async function(id){
+  if(!isAdmin()){ alert('Solo el administrador puede eliminar comerciales.'); return; }
+  const cm = S.comerciales.find(x=>x.id===id);
+  if(!cm) return;
+  const clientesAsignados = S.clientes.filter(c=>c.comercialId===id);
+  const aviso = `¿Eliminar al comercial "${cm.nombre}"?` +
+    (clientesAsignados.length ? `\n\nTiene ${clientesAsignados.length} cliente(s) asignado(s); se quedarán sin comercial (pasan a ser tuyos).` : '') +
+    `\n\nTambién se eliminará su acceso al CRM (ya no podrá iniciar sesión). Esta acción no se puede deshacer.`;
+  if(!confirm(aviso)) return;
+  for(const c of clientesAsignados){
+    await S.fb.updateDoc(S.fb.doc(col('crm2_clientes'), c.id), {comercialId:null});
+  }
+  const snapUsers = await S.fb.getDocs(S.fb.query(col('crm2_users'), S.fb.where('comercialId','==',id)));
+  for(const d of snapUsers.docs){ await S.fb.deleteDoc(S.fb.doc(col('crm2_users'), d.id)); }
+  await S.fb.deleteDoc(S.fb.doc(col('crm2_comerciales'), id));
+  logAction('Comercial eliminado', cm.nombre);
+  render();
+}
+function modalComercialForm(){
+  const editing = S.ui.showComercialForm!=='new';
+  const cm = editing ? S.comerciales.find(x=>x.id===S.ui.showComercialForm) : {};
+  return `
+  <div class="modal-bg" onclick="if(event.target===this) closeComercialForm()">
+    <div class="panel p-6 w-full max-w-md mt-4">
+      <div class="flex justify-between items-center mb-4"><div class="font-bold text-lg">${editing?'Editar comercial':'Nuevo comercial'}</div><button class="btn btn-ghost text-xs" onclick="closeComercialForm()">Cerrar</button></div>
+      <div class="space-y-3">
+        <div><label>Nombre</label><input id="cm_nombre" value="${esc(cm.nombre)}"></div>
+        <div><label>Email</label><input id="cm_email" type="email" value="${esc(cm.email)}"></div>
+        <div><label>Teléfono</label><input id="cm_telefono" value="${esc(cm.telefono)}"></div>
+        <div><label>Fecha de incorporación</label><input id="cm_fecha" type="date" value="${cm.fechaIncorporacion||todayISO()}"></div>
+        <div><label>Estado</label><select id="cm_estado"><option value="activo" ${cm.estado==='activo'?'selected':''}>Activo</option><option value="inactivo" ${cm.estado==='inactivo'?'selected':''}>Inactivo</option></select></div>
+        <div><label>% de comisión</label><input id="cm_pct" type="number" step="0.1" min="0" value="${cm.pctComision!=null?cm.pctComision:PCT_COMERCIAL_DEFECTO*100}"></div>
+        ${!editing?`<div class="pt-2 border-t" style="border-color:var(--line)"><div class="kicker mb-2">Acceso al CRM</div><label>Contraseña de acceso inicial</label><input id="cm_pass" type="password" placeholder="Si la dejas en blanco, se usa su nombre"><p class="text-xs mt-1" style="color:var(--ink-dim)">El comercial podrá cambiarla desde su cuenta en cualquier momento.</p></div>`:''}
+      </div>
+      <button class="btn btn-accent w-full mt-5" onclick="saveComercial(${editing?`'${cm.id}'`:'null'})">Guardar</button>
+    </div>
+  </div>`;
+}
+window.saveComercial = async function(id){
+  if(!isAdmin()){ alert('Solo el administrador puede crear o editar comerciales.'); return; }
+  const g = k=>document.getElementById('cm_'+k).value;
+  const data = {nombre:g('nombre').trim(), email:g('email').trim().toLowerCase(), telefono:g('telefono').trim(), fechaIncorporacion:g('fecha'), estado:g('estado'), pctComision:parseFloat(g('pct'))||0};
+  if(!data.nombre||!data.email){ alert('Nombre y email son obligatorios.'); return; }
+  if(id){ await S.fb.updateDoc(S.fb.doc(col('crm2_comerciales'), id), data); logAction('Comercial editado', data.nombre); }
+  else{
+    const ref = await S.fb.addDoc(col('crm2_comerciales'), data);
+    const pass = g('pass') || data.nombre.toLowerCase().replace(/\s+/g,'');
+    await S.fb.setDoc(S.fb.doc(col('crm2_users'), uid()), {nombre:data.nombre, email:data.email, pass, role:'comercial', comercialId:ref.id, creado:todayISO()});
+    logAction('Comercial creado', data.nombre);
+  }
+  S.ui.showComercialForm=null; render();
+}
+
+/* ===================== IMPORTAR / EXPORTAR ===================== */
+function viewImportar(){
+  return `
+  <h2 class="text-xl font-bold mb-1">Importar / Exportar</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Importa tu base de contactos desde CSV o exporta la cartera actual.</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="panel p-5">
+      <div class="font-bold mb-2">Importar CSV</div>
+      <p class="text-xs mb-3" style="color:var(--ink-dim)">Columnas esperadas: Nombre, Empresa, Teléfono, Email, Ciudad, Provincia, Tipo de cliente. El sistema detecta duplicados por email o teléfono antes de importar.</p>
+      <input type="file" id="csvFile" accept=".csv" class="mb-3">
+      <button class="btn btn-accent" onclick="handleCsvFile()">Analizar archivo</button>
+      <div id="importResult" class="mt-4"></div>
+    </div>
+    <div class="panel p-5">
+      <div class="font-bold mb-2">Exportar clientes</div>
+      ${isOwner()?`
+      <p class="text-xs mb-3" style="color:var(--ink-dim)">Exporta la cartera visible actualmente (según tus filtros en la pestaña Clientes).</p>
+      <button class="btn btn-ghost" onclick="exportCsv()">Descargar CSV</button>
+      `:`
+      <p class="text-xs" style="color:var(--ink-dim)">La descarga de la base de datos está restringida al administrador principal.</p>
+      `}
+    </div>
+  </div>`;
+}
+window.handleCsvFile = function(){
+  const file = document.getElementById('csvFile').files[0];
+  if(!file){ alert('Selecciona un archivo CSV.'); return; }
+  Papa.parse(file, {
+    header:true, skipEmptyLines:true,
+    complete: res => processImport(res.data)
+  });
+}
+function normPhone(s){ return (s||'').replace(/\D/g,''); }
+function processImport(rows){
+  const existingEmails = new Set(S.clientes.map(c=>(c.email||'').toLowerCase()).filter(Boolean));
+  const existingPhones = new Set(S.clientes.map(c=>normPhone(c.telefono)).filter(Boolean));
+  const get = (r,...keys)=>{ for(const k of keys){ const found = Object.keys(r).find(kk=>kk.trim().toLowerCase()===k); if(found && r[found]) return r[found]; } return ''; };
+  const mapped = rows.map(r=>({
+    nombreEmpresa: get(r,'empresa','nombre de empresa','sala','compañía')||get(r,'nombre'),
+    personaContacto: get(r,'nombre','persona de contacto','contacto'),
+    telefono: get(r,'teléfono','telefono','tel','whatsapp'),
+    email: get(r,'email','correo').toLowerCase(),
+    instagram: get(r,'instagram').replace(/^@/,''),
+    ciudad: get(r,'ciudad'),
+    provincia: get(r,'provincia'),
+    tipoCliente: get(r,'tipo de cliente','tipo')||'Otro'
+  })).filter(r=>r.nombreEmpresa);
+  mapped.forEach(r=>{ r.dup = (r.email && existingEmails.has(r.email)) || (r.telefono && existingPhones.has(normPhone(r.telefono))); });
+  S.ui.importRows = mapped;
+  const dupes = mapped.filter(r=>r.dup).length;
+  document.getElementById('importResult').innerHTML = `
+    <div class="text-sm mb-2">${mapped.length} filas leídas · <span style="color:${dupes?'var(--warn)':'var(--accent)'}">${dupes} posibles duplicados detectados</span></div>
+    <div class="max-h-64 overflow-y-auto panel2 p-2 mb-3 text-xs">
+      ${mapped.slice(0,300).map(r=>`<div class="flex justify-between py-1 border-b" style="border-color:var(--line)"><span>${esc(r.nombreEmpresa)} ${r.dup?'<span class=\"badge\" style=\"background:#332626;color:#e0603e\">DUPLICADO</span>':''}</span><span style="color:var(--ink-dim)">${esc(r.email||r.telefono||'')}</span></div>`).join('')}
+      ${mapped.length>300?`<div class="text-center pt-2" style="color:var(--ink-dim)">... y ${mapped.length-300} más</div>`:''}
+    </div>
+    <button class="btn btn-accent" onclick="confirmImport(false)">Importar ${mapped.length-dupes} nuevos (omitir duplicados)</button>
+    <button class="btn btn-ghost ml-2" onclick="confirmImport(true)">Importar todos igualmente</button>
+  `;
+}
+window.confirmImport = async function(includeDupes){
+  const rows = includeDupes ? S.ui.importRows : S.ui.importRows.filter(r=>!r.dup);
+  let batch = S.fb.writeBatch(S.db); let count=0; let total=0;
+  for(const r of rows){
+    const ref = S.fb.doc(col('crm2_clientes'));
+    batch.set(ref, {
+      nombreEmpresa:r.nombreEmpresa, personaContacto:r.personaContacto, telefono:r.telefono, email:r.email, instagram:r.instagram,
+      ciudad:r.ciudad, provincia:r.provincia, tipoCliente:r.tipoCliente, estado:'Nuevo', prioridad:'BAJO',
+      comercialId: isAdmin()? null : S.session.comercialId, fechaAlta:todayISO()
+    });
+    count++; total++;
+    if(count===450){ await batch.commit(); batch = S.fb.writeBatch(S.db); count=0; }
+  }
+  if(count>0) await batch.commit();
+  logAction('Importación CSV', `${total} clientes importados`);
+  alert(`${total} clientes importados correctamente.`);
+  document.getElementById('importResult').innerHTML='';
+  S.ui.importRows=[];
+}
+window.exportCsv = function(){
+  if(!isOwner()){ logAction('Intento de descarga bloqueado', 'Sin permiso'); alert('No tienes permiso para descargar la base de datos.'); return; }
+  logAction('Exportación CSV', '');
+  const f = S.ui.clienteFiltro;
+  let cs = misClientes().map(c=>({...c,...calcPotencial(c)}));
+  if(f.q) cs = cs.filter(c=> coincideBusqueda(c, f.q));
+  if(f.comercial) cs = cs.filter(c=>c.comercialId===f.comercial);
+  if(f.estado) cs = cs.filter(c=>c.estado===f.estado);
+  if(f.tipo) cs = cs.filter(c=>c.tipoCliente===f.tipo);
+  if(f.prioridad) cs = cs.filter(c=>c.prioridad===f.prioridad);
+  if(f.investigacion==='hecha') cs = cs.filter(c=>!!c.investigacion);
+  if(f.investigacion==='pendiente') cs = cs.filter(c=>!c.investigacion);
+  cs = filtrarPorAforo(cs, f.aforo);
+  const data = cs.map(c=>({
+    Empresa:c.nombreEmpresa, Contacto:c.personaContacto, Telefono:c.telefono, Email:c.email, Instagram:c.instagram, Ciudad:c.ciudad, Provincia:c.provincia,
+    Tipo:c.tipoCliente, Estado:c.estado, Comercial:nombreComercial(c.comercialId),
+    VentasRegistradas:c.ventasAnuales, RetornoRegistrado:c.retornoAnual, Prioridad:c.prioridad
+  }));
+  const csv = Papa.unparse(data);
+  const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entradasya_clientes.csv'; a.click();
+}
+
+/* ===================== ACTIVIDAD (solo admin principal) ===================== */
+function viewActividad(){
+  if(!isOwner()) return '<p style="color:var(--ink-dim)">No tienes acceso a esta sección.</p>';
+  const logs = S.logs.slice(0,300);
+  return `
+  <h2 class="text-xl font-bold mb-1">Actividad</h2>
+  <p class="text-sm mb-5" style="color:var(--ink-dim)">Registro de movimientos de todos los usuarios (últimos 300).</p>
+  <div class="panel p-4"><div class="overflow-x-auto"><table>
+    <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Rol</th><th>Acción</th><th>Detalle</th></tr></thead>
+    <tbody>${logs.length? logs.map(l=>`<tr>
+      <td style="color:var(--ink-dim)">${l.fechaHora? new Date(l.fechaHora).toLocaleString('es-ES') : '-'}</td>
+      <td class="font-semibold">${esc(l.usuario)}</td>
+      <td>${esc(l.role==='admin'?'Administrador':'Comercial')}</td>
+      <td>${esc(l.accion)}</td>
+      <td style="color:var(--ink-dim)">${esc(l.detalle||'-')}</td></tr>`).join('') : `<tr><td colspan="5" style="color:var(--ink-dim)">Sin actividad registrada todavía.</td></tr>`}</tbody>
+  </table></div></div>`;
+}
+
+/* ===================== INICIO ===================== */
+window.addEventListener('fb-ready', ()=>{ render(); });
+</script>
+</body>
+</html>
